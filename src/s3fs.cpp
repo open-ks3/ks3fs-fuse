@@ -182,6 +182,37 @@ static int set_moutpoint_attribute(struct stat& mpst);
 static int set_bucket(const char* arg);
 static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_args* outargs);
 
+// ks3 fuse interface functions
+static int ks3fs_getattr(const char* path, struct stat* stbuf);
+static int ks3fs_readlink(const char* path, char* buf, size_t size);
+static int ks3fs_mknod(const char* path, mode_t mode, dev_t rdev);
+static int ks3fs_mkdir(const char* path, mode_t mode);
+static int ks3fs_unlink(const char* path);
+static int ks3fs_rmdir(const char* path);
+static int ks3fs_symlink(const char* from, const char* to);
+static int ks3fs_rename(const char* from, const char* to);
+static int ks3fs_link(const char* from, const char* to);
+static int ks3fs_chmod(const char* path, mode_t mode);
+static int ks3fs_chmod_nocopy(const char* path, mode_t mode);
+static int ks3fs_chown(const char* path, uid_t uid, gid_t gid);
+static int ks3fs_chown_nocopy(const char* path, uid_t uid, gid_t gid);
+static int ks3fs_utimens(const char* path, const struct timespec ts[2]);
+static int ks3fs_utimens_nocopy(const char* path, const struct timespec ts[2]);
+static int ks3fs_truncate(const char* path, off_t size);
+static int ks3fs_create(const char* path, mode_t mode, struct fuse_file_info* fi);
+static int ks3fs_open(const char* path, struct fuse_file_info* fi);
+static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi);
+static int ks3fs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi);
+static int ks3fs_statfs(const char* path, struct statvfs* stbuf);
+static int ks3fs_flush(const char* path, struct fuse_file_info* fi);
+static int ks3fs_fsync(const char* path, int datasync, struct fuse_file_info* fi);
+static int ks3fs_release(const char* path, struct fuse_file_info* fi);
+static int ks3fs_opendir(const char* path, struct fuse_file_info* fi);
+static int ks3fs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi);
+static int ks3fs_access(const char* path, int mask);
+static void* ks3fs_init(struct fuse_conn_info* conn);
+static void ks3fs_destroy(void*);
+
 // fuse interface functions
 static int s3fs_getattr(const char* path, struct stat* stbuf);
 static int s3fs_readlink(const char* path, char* buf, size_t size);
