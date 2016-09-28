@@ -834,6 +834,12 @@ static int put_headers(const char* path, headers_t& meta, bool is_copy)
   return 0;
 }
 
+
+static int ks3fs_getattr(const char* path, struct stat* stbuf)
+{
+	return s3fs_getattr(path, stbuf);
+}
+
 static int s3fs_getattr(const char* path, struct stat* stbuf)
 {
   int result;
@@ -866,6 +872,12 @@ static int s3fs_getattr(const char* path, struct stat* stbuf)
   S3FS_MALLOCTRIM(0);
 
   return result;
+}
+
+
+static int ks3fs_readlink(const char* path, char* buf, size_t size)
+{
+	return s3fs_readlink(path, buf, size);
 }
 
 static int s3fs_readlink(const char* path, char* buf, size_t size)
@@ -966,6 +978,12 @@ static int create_file_object(const char* path, mode_t mode, uid_t uid, gid_t gi
   return s3fscurl.PutRequest(path, meta, -1);    // fd=-1 means for creating zero byte object.
 }
 
+
+static int ks3fs_mknod(const char *path, mode_t mode, dev_t rdev)
+{
+	return s3fs_mknod(path, mode, rdev);
+}
+
 static int s3fs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
   int       result;
@@ -985,6 +1003,11 @@ static int s3fs_mknod(const char *path, mode_t mode, dev_t rdev)
   S3FS_MALLOCTRIM(0);
 
   return result;
+}
+
+static int ks3fs_create(const char* path, mode_t mode, struct fuse_file_info* fi)
+{
+	return s3fs_create(path, mode, fi);
 }
 
 static int s3fs_create(const char* path, mode_t mode, struct fuse_file_info* fi)
@@ -1053,6 +1076,11 @@ static int create_directory_object(const char* path, mode_t mode, time_t time, u
   return s3fscurl.PutRequest(tpath.c_str(), meta, -1);    // fd=-1 means for creating zero byte object.
 }
 
+static int ks3fs_mkdir(const char* path, mode_t mode)
+{
+	return s3fs_mkdir(path, mode);
+}
+
 static int s3fs_mkdir(const char* path, mode_t mode)
 {
   int result;
@@ -1080,6 +1108,11 @@ static int s3fs_mkdir(const char* path, mode_t mode)
   S3FS_MALLOCTRIM(0);
 
   return result;
+}
+
+static int ks3fs_unlink(const char* path)
+{
+	return s3fs_unlink(path);
 }
 
 static int s3fs_unlink(const char* path)
@@ -1113,6 +1146,11 @@ static int directory_empty(const char* path)
     return -ENOTEMPTY;
   }
   return 0;
+}
+
+static int ks3fs_rmdir(const char* path)
+{
+	return ks3fs_rmdir(path);
 }
 
 static int s3fs_rmdir(const char* path)
@@ -1169,6 +1207,12 @@ static int s3fs_rmdir(const char* path)
   S3FS_MALLOCTRIM(0);
 
   return result;
+}
+
+
+static int ks3fs_symlink(const char* from, const char* to)
+{
+	return s3fs_symlink(from, to);
 }
 
 static int s3fs_symlink(const char* from, const char* to)
@@ -1490,6 +1534,11 @@ static int rename_directory(const char* from, const char* to)
   return 0;
 }
 
+static int ks3fs_rename(const char* from, const char* to)
+{
+	return s3fs_rename(from, to);
+}
+
 static int s3fs_rename(const char* from, const char* to)
 {
   struct stat buf;
@@ -1526,10 +1575,20 @@ static int s3fs_rename(const char* from, const char* to)
   return result;
 }
 
+static int ks3fs_link(const char* from, const char* to)
+{
+	return s3fs_link(from, to);
+}
+
 static int s3fs_link(const char* from, const char* to)
 {
   S3FS_PRN_INFO("[from=%s][to=%s]", from, to);
   return -EPERM;
+}
+
+static int ks3fs_chmod(const char* path, mode_t mode)
+{
+	return s3fs_chmod(path, mode);
 }
 
 static int s3fs_chmod(const char* path, mode_t mode)
@@ -1610,6 +1669,11 @@ static int s3fs_chmod(const char* path, mode_t mode)
   return 0;
 }
 
+static int ks3fs_chmod_nocopy(const char* path, mode_t mode)
+{
+	return s3fs_chmod_nocopy(path, mode);
+}
+
 static int s3fs_chmod_nocopy(const char* path, mode_t mode)
 {
   int         result;
@@ -1687,6 +1751,11 @@ static int s3fs_chmod_nocopy(const char* path, mode_t mode)
   S3FS_MALLOCTRIM(0);
 
   return result;
+}
+
+static int ks3fs_chown(const char* path, uid_t uid, gid_t gid)
+{
+	return s3fs_chown(path, uid, gid);
 }
 
 static int s3fs_chown(const char* path, uid_t uid, gid_t gid)
@@ -1769,6 +1838,11 @@ static int s3fs_chown(const char* path, uid_t uid, gid_t gid)
   S3FS_MALLOCTRIM(0);
 
   return 0;
+}
+
+static int ks3fs_chown_nocopy(const char* path, uid_t uid, gid_t gid)
+{
+	return s3fs_chown_nocopy(path, uid, gid);
 }
 
 static int s3fs_chown_nocopy(const char* path, uid_t uid, gid_t gid)
@@ -1860,6 +1934,11 @@ static int s3fs_chown_nocopy(const char* path, uid_t uid, gid_t gid)
   return result;
 }
 
+static int ks3fs_utimens(const char* path, const struct timespec ts[2])
+{
+	return s3fs_utimens(path, ts);
+}
+
 static int s3fs_utimens(const char* path, const struct timespec ts[2])
 {
   int result;
@@ -1926,6 +2005,11 @@ static int s3fs_utimens(const char* path, const struct timespec ts[2])
   S3FS_MALLOCTRIM(0);
 
   return 0;
+}
+
+static int ks3fs_utimens_nocopy(const char* path, const struct timespec ts[2])
+{
+	return s3fs_utimens_nocopy(path, ts);
 }
 
 static int s3fs_utimens_nocopy(const char* path, const struct timespec ts[2])
@@ -2013,6 +2097,11 @@ static int s3fs_utimens_nocopy(const char* path, const struct timespec ts[2])
   return result;
 }
 
+static int ks3fs_truncate(const char* path, off_t size)
+{
+	return s3fs_truncate(path, size);
+}
+
 static int s3fs_truncate(const char* path, off_t size)
 {
   int result;
@@ -2078,6 +2167,11 @@ static int s3fs_truncate(const char* path, off_t size)
   return result;
 }
 
+static int ks3fs_open(const char* path, struct fuse_file_info* fi)
+{
+	return s3fs_open(path, fi);
+}
+
 static int s3fs_open(const char* path, struct fuse_file_info* fi)
 {
   int result;
@@ -2138,6 +2232,11 @@ static int s3fs_open(const char* path, struct fuse_file_info* fi)
   return 0;
 }
 
+static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
+{
+	return s3fs_read(path, buf, size, offset, fi);
+}
+
 static int s3fs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
   ssize_t res;
@@ -2169,6 +2268,11 @@ static int s3fs_read(const char* path, char* buf, size_t size, off_t offset, str
   return static_cast<int>(res);
 }
 
+static int ks3fs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
+{
+	return s3fs_write(path, buf, size, offset, fi);
+}
+
 static int s3fs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
   ssize_t res;
@@ -2191,6 +2295,11 @@ static int s3fs_write(const char* path, const char* buf, size_t size, off_t offs
   return static_cast<int>(res);
 }
 
+static int ks3fs_statfs(const char* path, struct statvfs* stbuf)
+{
+	return s3fs_statfs(path, stbuf);
+}
+
 static int s3fs_statfs(const char* path, struct statvfs* stbuf)
 {
   // 256T
@@ -2200,6 +2309,11 @@ static int s3fs_statfs(const char* path, struct statvfs* stbuf)
   stbuf->f_bavail = 0x1000000;
   stbuf->f_namemax = NAME_MAX;
   return 0;
+}
+
+static int ks3fs_flush(const char* path, struct fuse_file_info* fi)
+{
+	return s3fs_flush(path, fi);
 }
 
 static int s3fs_flush(const char* path, struct fuse_file_info* fi)
@@ -2232,6 +2346,11 @@ static int s3fs_flush(const char* path, struct fuse_file_info* fi)
   return result;
 }
 
+static int ks3fs_fsync(const char* path, int datasync, struct fuse_file_info* fi)
+{
+	return s3fs_fsync(path, datasync, fi);
+}
+
 // [NOTICE]
 // Assumption is a valid fd.
 //
@@ -2255,6 +2374,11 @@ static int s3fs_fsync(const char* path, int datasync, struct fuse_file_info* fi)
   StatCache::getStatCacheData()->DelStat(path);
 
   return result;
+}
+
+static int ks3fs_release(const char* path, struct fuse_file_info* fi)
+{
+	return s3fs_release(path, fi);
 }
 
 static int s3fs_release(const char* path, struct fuse_file_info* fi)
@@ -2295,6 +2419,11 @@ static int s3fs_release(const char* path, struct fuse_file_info* fi)
   S3FS_MALLOCTRIM(0);
 
   return 0;
+}
+
+static int ks3fs_opendir(const char* path, struct fuse_file_info* fi)
+{
+	return s3fs_opendir(path, fi);
 }
 
 static int s3fs_opendir(const char* path, struct fuse_file_info* fi)
@@ -2446,6 +2575,11 @@ static int readdir_multi_head(const char* path, S3ObjList& head, void* buf, fuse
     curlmulti.Clear();
   }
   return result;
+}
+
+static int ks3fs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi)
+{
+	return s3fs_readdir(path, buf, filler, offset, fi);
 }
 
 static int s3fs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi)
@@ -3397,6 +3531,11 @@ static void s3fs_exit_fuseloop(int exit_status) {
     }
 }
 
+static void* ks3fs_init(struct fuse_conn_info* conn)
+{
+	return s3fs_init(conn);
+}
+
 static void* s3fs_init(struct fuse_conn_info* conn)
 {
   S3FS_PRN_CRIT("init v%s(commit:%s) with %s", VERSION, COMMIT_HASH_VAL, s3fs_crypt_lib_name());
@@ -3462,6 +3601,11 @@ static void* s3fs_init(struct fuse_conn_info* conn)
   return NULL;
 }
 
+static void ks3fs_destroy(void* args)
+{
+	return s3fs_destroy(args);
+}
+
 static void s3fs_destroy(void*)
 {
   S3FS_PRN_INFO("destroy");
@@ -3476,6 +3620,11 @@ static void s3fs_destroy(void*)
   }
   // ssl
   s3fs_destroy_global_ssl();
+}
+
+static int ks3fs_access(const char* path, int mask)
+{
+	return s3fs_access(path, mask);
 }
 
 static int s3fs_access(const char* path, int mask)
@@ -4984,38 +5133,38 @@ int main(int argc, char* argv[])
     exit(EXIT_FAILURE);
   }
 
-  s3fs_oper.getattr   = s3fs_getattr;
-  s3fs_oper.readlink  = s3fs_readlink;
-  s3fs_oper.mknod     = s3fs_mknod;
-  s3fs_oper.mkdir     = s3fs_mkdir;
-  s3fs_oper.unlink    = s3fs_unlink;
-  s3fs_oper.rmdir     = s3fs_rmdir;
-  s3fs_oper.symlink   = s3fs_symlink;
-  s3fs_oper.rename    = s3fs_rename;
-  s3fs_oper.link      = s3fs_link;
+  s3fs_oper.getattr   = ks3fs_getattr;
+  s3fs_oper.readlink  = ks3fs_readlink;
+  s3fs_oper.mknod     = ks3fs_mknod;
+  s3fs_oper.mkdir     = ks3fs_mkdir;
+  s3fs_oper.unlink    = ks3fs_unlink;
+  s3fs_oper.rmdir     = ks3fs_rmdir;
+  s3fs_oper.symlink   = ks3fs_symlink;
+  s3fs_oper.rename    = ks3fs_rename;
+  s3fs_oper.link      = ks3fs_link;
   if(!nocopyapi){
-    s3fs_oper.chmod   = s3fs_chmod;
-    s3fs_oper.chown   = s3fs_chown;
-    s3fs_oper.utimens = s3fs_utimens;
+    s3fs_oper.chmod   = ks3fs_chmod;
+    s3fs_oper.chown   = ks3fs_chown;
+    s3fs_oper.utimens = ks3fs_utimens;
   }else{
-    s3fs_oper.chmod   = s3fs_chmod_nocopy;
-    s3fs_oper.chown   = s3fs_chown_nocopy;
-    s3fs_oper.utimens = s3fs_utimens_nocopy;
+    s3fs_oper.chmod   = ks3fs_chmod_nocopy;
+    s3fs_oper.chown   = ks3fs_chown_nocopy;
+    s3fs_oper.utimens = ks3fs_utimens_nocopy;
   }
-  s3fs_oper.truncate  = s3fs_truncate;
-  s3fs_oper.open      = s3fs_open;
-  s3fs_oper.read      = s3fs_read;
-  s3fs_oper.write     = s3fs_write;
-  s3fs_oper.statfs    = s3fs_statfs;
-  s3fs_oper.flush     = s3fs_flush;
-  s3fs_oper.fsync     = s3fs_fsync;
-  s3fs_oper.release   = s3fs_release;
-  s3fs_oper.opendir   = s3fs_opendir;
-  s3fs_oper.readdir   = s3fs_readdir;
-  s3fs_oper.init      = s3fs_init;
-  s3fs_oper.destroy   = s3fs_destroy;
-  s3fs_oper.access    = s3fs_access;
-  s3fs_oper.create    = s3fs_create;
+  s3fs_oper.truncate  = ks3fs_truncate;
+  s3fs_oper.open      = ks3fs_open;
+  s3fs_oper.read      = ks3fs_read;
+  s3fs_oper.write     = ks3fs_write;
+  s3fs_oper.statfs    = ks3fs_statfs;
+  s3fs_oper.flush     = ks3fs_flush;
+  s3fs_oper.fsync     = ks3fs_fsync;
+  s3fs_oper.release   = ks3fs_release;
+  s3fs_oper.opendir   = ks3fs_opendir;
+  s3fs_oper.readdir   = ks3fs_readdir;
+  s3fs_oper.init      = ks3fs_init;
+  s3fs_oper.destroy   = ks3fs_destroy;
+  s3fs_oper.access    = ks3fs_access;
+  s3fs_oper.create    = ks3fs_create;
   // extended attributes
   if(is_use_xattr){
     s3fs_oper.setxattr    = s3fs_setxattr;
