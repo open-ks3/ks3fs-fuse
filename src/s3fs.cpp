@@ -127,6 +127,8 @@ static int64_t singlepart_copy_limit = FIVE_GB;
 static bool is_specified_endpoint = false;
 static int s3fs_init_deferred_exit_status = 0;
 
+static size_t postfix_length      = 10;
+
 //-------------------------------------------------------------------
 // Static functions : prototype
 //-------------------------------------------------------------------
@@ -181,6 +183,8 @@ static int get_access_keys(void);
 static int set_moutpoint_attribute(struct stat& mpst);
 static int set_bucket(const char* arg);
 static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_args* outargs);
+
+static int get_subpaths(const char* path, s3obj_list_t& subpaths);
 
 // ks3 fuse interface functions
 static int ks3fs_getattr(const char* path, struct stat* stbuf);
@@ -836,70 +840,88 @@ static int put_headers(const char* path, headers_t& meta, bool is_copy)
 
 static int get_subpaths(const char* path, s3obj_list_t& subpaths)
 {
-	int result;
-	S3ObjList head;
+  int result;
+  S3ObjList head;
 
-	S3FS_PRN_INFO("[path=%s]", path);
+  S3FS_PRN_INFO("[path=%s]", path);
 
-	if(0 != (result = check_object_access(path, X_OK, NULL))){
-		return result;
-	}
+  if(0 != (result = check_object_access(mydirname(path).c_str(), X_OK, NULL))){
+    return result;
+  }
 
-	if(0 != (result = list_bucket(path, head, NULL))){
-		S3FS_PRN_ERR("list_bucket returns error(%d).", result);
-		return result; 
-	}
-	
-	head.GetNameList(subpaths, true, false);  // get name with "/".
-	S3FS_PRN_INFO1("[path=%s][list=%zu]", path, subpaths.size());
+  if(0 != (result = list_bucket(mydirname(path).c_str(), head, NULL))){
+    S3FS_PRN_ERR("list_bucket returns error(%d).", result);
+    return result; 
+  }
 
-	return 0;
+  s3obj_list_t headlist;  
+  string file = mybasename(path);
+  head.GetNameList(headlist, true, false);  // get name with "/".
+
+  s3obj_list_t::const_iterator liter;
+  for(liter = headlist.begin(); headlist.end() != liter; ++liter){
+    string subpath = (*liter);
+    if (subpath.length() > postfix_length && file == subpath.substr(0, subpath.length() - postfix_length)) {
+      subpaths.push_back(subpath);
+    }
+  }
+  S3FS_PRN_INFO1("[path=%s][list=%zu]", path, subpaths.size());
+
+  return 0;
 }
 
 static int ks3fs_getattr(const char* path, struct stat* stbuf)
 {
 
-	int result;
-	struct stat st;
+  int result;
 
-    S3FS_PRN_INFO("[path=%s]", path);
+  S3FS_PRN_INFO("[path=%s]", path);
 
-	if (0 != (result = s3fs_getattr(path, &st))) {
-		return result;
-	}
+  if (0 == (result = s3fs_getattr(path, stbuf))) {
+    return 0;
+  }
 
-	if (S_ISDIR(st.st_mode)) {
-		s3obj_list_t subpaths;
-		get_subpaths(path, subpaths);
+  struct stat st;
+  off_t st_size = 0;
+  blkcnt_t st_blocks = 0;
+  time_t atime = 0;
+  time_t mtime = 0;
+  time_t ctime = 0;
 
-		s3obj_list_t::const_iterator liter;
-		for(liter = subpaths.begin(); subpaths.end() != liter; ++liter){
-			struct stat sub_st;
-			string subpath = (*liter);
-			result = s3fs_getattr(path, &sub_st);
-			if (result != 0) {
-				return result;
-			}
-			st.st_size += sub_st.st_size;
-			st.st_blocks += sub_st.st_blocks;
-			if (st.st_atime < sub_st.st_atime) {
-				st.st_atime = sub_st.st_atime;
-			}
-			if (st.st_mtime < sub_st.st_mtime) {
-				st.st_mtime = sub_st.st_mtime;
-			}
-			if (st.st_ctime < sub_st.st_ctime) {
-				st.st_ctime = sub_st.st_ctime;
-			}
-		}
-	}
-	
-	if (stbuf) {
-		*stbuf = st;
-	}
-	S3FS_PRN_DBG("[path=%s] uid=%u, gid=%u, mode=%04o", path, (unsigned int)(stbuf->st_uid), (unsigned int)(stbuf->st_gid), stbuf->st_mode);
+  s3obj_list_t subpaths;
+  get_subpaths(path, subpaths);
 
-	return result;
+  s3obj_list_t::const_iterator liter;
+  for(liter = subpaths.begin(); subpaths.end() != liter; ++liter){
+    string subpath = mydirname(path) + subpath;
+    result = s3fs_getattr(subpath.c_str(), &st);
+    if (result != 0) {
+      return result;
+    }
+    st_size += st.st_size;
+    st_blocks += st.st_blocks;
+    if (atime < st.st_atime) {
+      atime = st.st_atime;
+    }
+    if (mtime < st.st_mtime) {
+      mtime = st.st_mtime;
+    }
+    if (ctime < st.st_ctime) {
+      ctime = st.st_ctime;
+    }
+  }
+  
+  if (stbuf) {
+    *stbuf = st;
+    stbuf->st_size = st_size;
+    stbuf->st_blocks = st_blocks;
+    stbuf->st_atime = atime;
+    stbuf->st_mtime = mtime;
+    stbuf->st_ctime = ctime;
+  }
+  S3FS_PRN_DBG("[path=%s] uid=%u, gid=%u, mode=%04o", path, (unsigned int)(stbuf->st_uid), (unsigned int)(stbuf->st_gid), stbuf->st_mode);
+
+  return result;
 }
 
 static int s3fs_getattr(const char* path, struct stat* stbuf)
