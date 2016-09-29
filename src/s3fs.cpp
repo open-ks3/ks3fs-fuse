@@ -834,10 +834,72 @@ static int put_headers(const char* path, headers_t& meta, bool is_copy)
   return 0;
 }
 
+static int get_subpaths(const char* path, s3obj_list_t& subpaths)
+{
+	int result;
+	S3ObjList head;
+
+	S3FS_PRN_INFO("[path=%s]", path);
+
+	if(0 != (result = check_object_access(path, X_OK, NULL))){
+		return result;
+	}
+
+	if(0 != (result = list_bucket(path, head, NULL))){
+		S3FS_PRN_ERR("list_bucket returns error(%d).", result);
+		return result; 
+	}
+	
+	head.GetNameList(subpaths, true, false);  // get name with "/".
+	S3FS_PRN_INFO1("[path=%s][list=%zu]", path, subpaths.size());
+
+	return 0;
+}
 
 static int ks3fs_getattr(const char* path, struct stat* stbuf)
 {
-	return s3fs_getattr(path, stbuf);
+
+	int result;
+	struct stat st;
+
+    S3FS_PRN_INFO("[path=%s]", path);
+
+	if (0 != (result = s3fs_getattr(path, &st))) {
+		return result;
+	}
+
+	if (S_ISDIR(st.st_mode)) {
+		s3obj_list_t subpaths;
+		get_subpaths(path, subpaths);
+
+		s3obj_list_t::const_iterator liter;
+		for(liter = subpaths.begin(); subpaths.end() != liter; ++liter){
+			struct stat sub_st;
+			string subpath = (*liter);
+			result = s3fs_getattr(path, &sub_st);
+			if (result != 0) {
+				return result;
+			}
+			st.st_size += sub_st.st_size;
+			st.st_blocks += sub_st.st_blocks;
+			if (st.st_atime < sub_st.st_atime) {
+				st.st_atime = sub_st.st_atime;
+			}
+			if (st.st_mtime < sub_st.st_mtime) {
+				st.st_mtime = sub_st.st_mtime;
+			}
+			if (st.st_ctime < sub_st.st_ctime) {
+				st.st_ctime = sub_st.st_ctime;
+			}
+		}
+	}
+	
+	if (stbuf) {
+		*stbuf = st;
+	}
+	S3FS_PRN_DBG("[path=%s] uid=%u, gid=%u, mode=%04o", path, (unsigned int)(stbuf->st_uid), (unsigned int)(stbuf->st_gid), stbuf->st_mode);
+
+	return result;
 }
 
 static int s3fs_getattr(const char* path, struct stat* stbuf)
