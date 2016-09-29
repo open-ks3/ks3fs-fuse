@@ -859,7 +859,7 @@ static int get_subpaths(const char* path, s3obj_list_t& subpaths)
   head.GetNameList(headlist, true, false);  // get name with "/".
 
   s3obj_list_t::const_iterator liter;
-  for(liter = headlist.begin(); headlist.end() != liter; ++liter){
+  for(liter = headlist.begin(); liter != headlist.end(); ++liter){
     string subpath = (*liter);
     if (subpath.length() > postfix_length && file == subpath.substr(0, subpath.length() - postfix_length)) {
       subpaths.push_back(subpath);
@@ -892,8 +892,13 @@ static int ks3fs_getattr(const char* path, struct stat* stbuf)
   get_subpaths(path, subpaths);
 
   s3obj_list_t::const_iterator liter;
-  for(liter = subpaths.begin(); subpaths.end() != liter; ++liter){
-    string subpath = mydirname(path) + subpath;
+  for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
+    string subpath = (*liter);
+    if (mydirname(path) == "/") {
+      subpath = mydirname(path) + subpath;
+    } else {
+      subpath = mydirname(path) + "/" + subpath;
+    }
     result = s3fs_getattr(subpath.c_str(), &st);
     if (result != 0) {
       return result;
