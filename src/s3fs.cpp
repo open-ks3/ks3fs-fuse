@@ -185,6 +185,7 @@ static int set_bucket(const char* arg);
 static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_args* outargs);
 
 static int get_subpaths(const char* path, s3obj_list_t& subpaths);
+static int ks3fs_list_part_files(const char *path, s3obj_list_t &objs);
 
 // ks3 fuse interface functions
 static int ks3fs_getattr(const char* path, struct stat* stbuf);
@@ -1239,7 +1240,7 @@ static int directory_empty(const char* path)
 
 static int ks3fs_rmdir(const char* path)
 {
-	return ks3fs_rmdir(path);
+	return s3fs_rmdir(path);
 }
 
 static int s3fs_rmdir(const char* path)
@@ -2321,9 +2322,89 @@ static int s3fs_open(const char* path, struct fuse_file_info* fi)
   return 0;
 }
 
+
+static int ks3fs_list_part_files(const char *path, s3obj_list_t& objs)
+{
+	int result;
+    S3ObjList objects;
+    s3obj_list_t filter;
+    string name = mybasename(path);
+	string parent = mydirname(path);
+    if(parent == "."){
+      parent = "/";
+    }
+    if (0 != (result = list_bucket(parent.c_str(), objects, NULL, true))) {
+    	return result;
+    }
+    objects.GetNameList(filter);
+    s3obj_list_t::iterator iter;
+    for (iter = filter.begin(); iter != filter.end(); iter ++) {
+    	string::size_type idx = (*iter).find(name);
+    	if (idx != string::npos) {
+    		objs.push_back((*iter));
+    	}
+    }
+    if (objs.size() > 0) {
+    	objs.sort();
+    	return result;
+    }
+	return result;
+}
+
+
 static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
-	return s3fs_read(path, buf, size, offset, fi);
+	ssize_t res = 0;
+
+	S3FS_PRN_DBG("[path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
+
+	s3obj_list_t objs;
+
+	if (0 != ks3fs_list_part_files(path, objs)) {
+		S3FS_PRN_ERR("could not find file from s3(%s)", path);
+		return -EIO;
+	}
+
+	size_t pile_size = 0;
+
+	for (s3obj_list_t::iterator iter = objs.begin(); iter != objs.end(); iter ++) {
+
+		string current_file_path = *iter;
+		// for more safty get file stat
+		struct stat current_file_stat;
+		if (0 != s3fs_getattr(current_file_path.c_str(), &current_file_stat)) {
+			S3FS_PRN_ERR("get file (%s) attribute error", path);
+			return -EIO;
+		}
+
+		pile_size += current_file_stat.st_size;
+
+		if (pile_size <= size) {
+			continue;
+		}
+
+		size_t current_file_remain_size = pile_size - size;
+
+		char* buffer = NULL;
+
+		size_t current_size = current_file_stat.st_size - current_file_remain_size;
+
+		if (current_file_remain_size >= offset) {
+			res += s3fs_read((*iter).c_str(), buffer, current_size, offset, fi);
+			char *t = new char[strlen(buf)+strlen(buffer)+1];
+			strcpy(t, buf);
+			strcat(t, buffer);
+			buf = t;
+			break;
+		}
+		res += s3fs_read((*iter).c_str(), buffer, current_size, current_file_remain_size, fi);
+		char *t = new char[strlen(buf)+strlen(buffer)+1];
+		strcpy(t, buf);
+		strcat(t, buffer);
+		buf = t;
+		offset -= current_file_stat.st_size;
+	}
+	return res;
 }
 
 static int s3fs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
