@@ -128,6 +128,7 @@ static bool is_specified_endpoint = false;
 static int s3fs_init_deferred_exit_status = 0;
 
 static size_t postfix_length      = 10;
+static uint64_t split_file_size          = FOUR_GB;
 
 //-------------------------------------------------------------------
 // Static functions : prototype
@@ -851,10 +852,10 @@ static int get_subpaths(const char* path, s3obj_list_t& subpaths)
 
   if(0 != (result = list_bucket(mydirname(path).c_str(), head, NULL))){
     S3FS_PRN_ERR("list_bucket returns error(%d).", result);
-    return result; 
+    return result;
   }
 
-  s3obj_list_t headlist;  
+  s3obj_list_t headlist;
   string file = mybasename(path);
   head.GetNameList(headlist, true, false);  // get name with "/".
 
@@ -915,7 +916,7 @@ static int ks3fs_getattr(const char* path, struct stat* stbuf)
       ctime = st.st_ctime;
     }
   }
-  
+
   if (stbuf) {
     *stbuf = st;
     stbuf->st_size = st_size;
@@ -2359,7 +2360,25 @@ static int s3fs_read(const char* path, char* buf, size_t size, off_t offset, str
 
 static int ks3fs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
-	return s3fs_write(path, buf, size, offset, fi);
+	int result;
+	char real_path[1024];
+	off_t real_offset = offset%split_file_size;
+	uint32_t cur_file_no = offset/split_file_size;
+
+	S3FS_PRN_DBG("[path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
+
+	snprintf(real_path, 1024, "%s.part%5d", path, cur_file_no);
+	if (size + offset > (cur_file_no + 1) * split_file_size) {
+		size_t left_size = (cur_file_no + 1) * split_file_size - offset;
+		if (0 != (result = s3fs_write(real_path, buf, left_size, real_offset, fi))) {
+			return result;
+		}
+		s3fs_flush(real_path, fi);
+		snprintf(real_path, 1024, "%s.part%5d", path, cur_file_no+1);
+		return s3fs_write(real_path, buf + left_size, size - left_size, 0, fi);
+	} else {
+		return s3fs_write(real_path, buf, size, real_offset, fi);
+	}
 }
 
 static int s3fs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
