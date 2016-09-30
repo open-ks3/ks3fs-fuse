@@ -865,6 +865,11 @@ static int get_subpaths(const char* path, s3obj_list_t& subpaths)
   for(liter = headlist.begin(); liter != headlist.end(); ++liter){
     string subpath = (*liter);
     if (subpath.length() > postfix_length && file == subpath.substr(0, subpath.length() - postfix_length)) {
+      if (mydirname(path) == "/") {
+        subpath = mydirname(path) + subpath;
+      } else {
+        subpath = mydirname(path) + "/" + subpath;
+      }
       subpaths.push_back(subpath);
     }
   }
@@ -897,11 +902,6 @@ static int ks3fs_getattr(const char* path, struct stat* stbuf)
   s3obj_list_t::const_iterator liter;
   for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
     string subpath = (*liter);
-    if (mydirname(path) == "/") {
-      subpath = mydirname(path) + subpath;
-    } else {
-      subpath = mydirname(path) + "/" + subpath;
-    }
     result = s3fs_getattr(subpath.c_str(), &st);
     if (result != 0) {
       return result;
@@ -1215,12 +1215,7 @@ static int ks3fs_unlink(const char* path)
 
    s3obj_list_t::const_iterator liter;
    for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
-       string subpath = (*liter);
-    if (mydirname(path) == "/") {
-      subpath = mydirname(path) + subpath;
-    } else {
-      subpath = mydirname(path) + "/" + subpath;
-    }
+    string subpath = (*liter);
     if (0 != (result = s3fs_unlink(subpath.c_str()))) {
       return result;
     }
@@ -2484,11 +2479,6 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
     s3obj_list_t::const_iterator liter;
     for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
       string subpath = (*liter);
-      if (mydirname(path) == "/") {
-        subpath = mydirname(path) + subpath;
-      } else {
-        subpath = mydirname(path) + "/" + subpath;
-      }
       if (0 == strncmp(subpath.c_str(), real_path, subpath.length())) {
         if (0 != (result = s3fs_open(real_path, fi))) {
           return result;
@@ -2579,19 +2569,14 @@ static int ks3fs_flush(const char* path, struct fuse_file_info* fi)
   get_subpaths(path, subpaths);
 
    s3obj_list_t::const_iterator liter;
-   for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
-       string subpath = (*liter);
-    if (mydirname(path) == "/") {
-      subpath = mydirname(path) + subpath;
-    } else {
-      subpath = mydirname(path) + "/" + subpath;
-    }
-    FdEntity* ent;
-    if(NULL != (ent = FdManager::get()->GetFdEntity(subpath.c_str()))){
-      fi->fh = ent->GetFd();
-      if (0 != (result = s3fs_flush(subpath.c_str(), fi))) {
-        return result;
-      }
+   for(liter = subpaths.begin(); liter != subpaths.end(); ++liter) {
+      string subpath = (*liter);
+      FdEntity* ent;
+      if(NULL != (ent = FdManager::get()->GetFdEntity(subpath.c_str()))){
+        fi->fh = ent->GetFd();
+        if (0 != (result = s3fs_flush(subpath.c_str(), fi))) {
+          return result;
+        }
     }
   }
   return result;
@@ -2659,21 +2644,15 @@ static int s3fs_fsync(const char* path, int datasync, struct fuse_file_info* fi)
 
 static int ks3fs_release(const char* path, struct fuse_file_info* fi)
 {
-    S3FS_PRN_INFO("[path=%s][fd=%llu]", path, (unsigned long long)(fi->fh));
+  S3FS_PRN_INFO("[path=%s][fd=%llu]", path, (unsigned long long)(fi->fh));
 
   int result = 0;
   s3obj_list_t subpaths;
   get_subpaths(path, subpaths);
 
-   s3obj_list_t::const_iterator liter;
-   for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
-       string subpath = (*liter);
-    if (mydirname(path) == "/") {
-      subpath = mydirname(path) + subpath;
-    } else {
-      subpath = mydirname(path) + "/" + subpath;
-    }
-
+  s3obj_list_t::const_iterator liter;
+  for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
+    string subpath = (*liter);
     FdEntity* ent;
     if(NULL != (ent = FdManager::get()->GetFdEntity(subpath.c_str()))){
       fi->fh = ent->GetFd();
