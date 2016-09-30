@@ -129,7 +129,7 @@ static int s3fs_init_deferred_exit_status = 0;
 
 static const size_t path_length   = 1024;
 static size_t postfix_length      = 10;
-static uint64_t split_file_size   = FOUR_GB;
+static uint64_t split_file_size   = 4 * 1024 * 1024;
 
 //-------------------------------------------------------------------
 // Static functions : prototype
@@ -1099,6 +1099,7 @@ static int s3fs_mknod(const char *path, mode_t mode, dev_t rdev)
 
 static int ks3fs_create(const char* path, mode_t mode, struct fuse_file_info* fi)
 {
+  // must be first part file
   char real_path[path_length];
   snprintf(real_path, path_length, "%s.part00000", path);
   return s3fs_create(real_path, mode, fi);
@@ -2474,49 +2475,56 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
 
   memset(real_path, path_length, 0);
   snprintf(real_path, path_length, "%s.part%05d", path, cur_file_no);
-#if 0
+
   if (offset == 0) {
+    // for rewrite same file
     s3obj_list_t subpaths;
     get_subpaths(path, subpaths);
 
     s3obj_list_t::const_iterator liter;
     for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
       string subpath = (*liter);
-      if (subpath != string(real_path)) {
-        if (mydirname(path) == "/") {
-          subpath = mydirname(path) + subpath;
-        } else {
-          subpath = mydirname(path) + "/" + subpath;
+      if (mydirname(path) == "/") {
+        subpath = mydirname(path) + subpath;
+      } else {
+        subpath = mydirname(path) + "/" + subpath;
+      }
+      if (0 == strncmp(subpath.c_str(), real_path, subpath.length())) {
+        if (0 != (result = s3fs_open(real_path, fi))) {
+          return result;
         }
+      } else {
         s3fs_unlink(subpath.c_str());
       }
     }
-  }
-#endif
-  FdEntity* ent;
-  if(NULL == (ent = FdManager::get()->GetFdEntity(real_path))){
-    if (0 == cur_file_no) {
-      return -EIO;
-    }
-
-    struct stat st;
-    char first_path[path_length];
-    memset(first_path, path_length, 0);
-    snprintf(first_path, path_length, "%s.part%05d", path, 0);
-    if (0 != (result = ks3fs_getattr(first_path, &st))) {
-      return result;
-    }
-
-    if (0 != (result = s3fs_create(real_path, st.st_mode, fi))) {
-      return result;
-    }
-    if (0 != (result = s3fs_open(real_path, fi))) {
-      return result;
+  } else {
+    FdEntity* ent;
+    if(NULL == (ent = FdManager::get()->GetFdEntity(real_path))){
+      if (0 == cur_file_no) {
+        return -EIO;
+      }
+ 
+      // need split file
+      struct stat st;
+      char first_path[path_length];
+      memset(first_path, path_length, 0);
+      snprintf(first_path, path_length, "%s.part%05d", path, 0);
+      if (0 != (result = ks3fs_getattr(first_path, &st))) {
+        return result;
+      }
+ 
+      if (0 != (result = s3fs_create(real_path, st.st_mode, fi))) {
+        return result;
+      }
+      if (0 != (result = s3fs_open(real_path, fi))) {
+        return result;
+      }
     }
   }
 
   size_t left_size = (cur_file_no + 1) * split_file_size - offset;
   if (left_size < size) {
+    // vfs will rewrite the left
     return s3fs_write(real_path, buf, left_size, real_offset, fi);
   } else {
     return s3fs_write(real_path, buf, size, real_offset, fi);
