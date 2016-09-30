@@ -129,7 +129,7 @@ static int s3fs_init_deferred_exit_status = 0;
 
 static const size_t path_length   = 1024;
 static size_t postfix_length      = 10;
-static uint64_t split_file_size   = FOUR_GB;
+static uint64_t split_file_size   = 4 * 1024 * 1024;
 
 //-------------------------------------------------------------------
 // Static functions : prototype
@@ -2393,7 +2393,7 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
 
   memset(real_path, path_length, 0);
   snprintf(real_path, path_length, "%s.part%05d", path, cur_file_no);
-#if 0
+
   if (offset == 0) {
     s3obj_list_t subpaths;
     get_subpaths(path, subpaths);
@@ -2401,36 +2401,40 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
     s3obj_list_t::const_iterator liter;
     for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
       string subpath = (*liter);
-      if (subpath != string(real_path)) {
-        if (mydirname(path) == "/") {
-          subpath = mydirname(path) + subpath;
-        } else {
-          subpath = mydirname(path) + "/" + subpath;
+      if (mydirname(path) == "/") {
+        subpath = mydirname(path) + subpath;
+      } else {
+        subpath = mydirname(path) + "/" + subpath;
+      }
+      if (0 == strncmp(subpath.c_str(), real_path, subpath.length())) {
+        if (0 != (result = s3fs_open(real_path, fi))) {
+          return result;
         }
+      } else {
         s3fs_unlink(subpath.c_str());
       }
     }
-  }
-#endif
-  FdEntity* ent;
-  if(NULL == (ent = FdManager::get()->GetFdEntity(real_path))){
-    if (0 == cur_file_no) {
-      return -EIO;
-    }
-
-    struct stat st;
-    char first_path[path_length];
-    memset(first_path, path_length, 0);
-    snprintf(first_path, path_length, "%s.part%05d", path, 0);
-    if (0 != (result = ks3fs_getattr(first_path, &st))) {
-      return result;
-    }
-
-    if (0 != (result = s3fs_create(real_path, st.st_mode, fi))) {
-      return result;
-    }
-    if (0 != (result = s3fs_open(real_path, fi))) {
-      return result;
+  } else {
+    FdEntity* ent;
+    if(NULL == (ent = FdManager::get()->GetFdEntity(real_path))){
+      if (0 == cur_file_no) {
+        return -EIO;
+      }
+ 
+      struct stat st;
+      char first_path[path_length];
+      memset(first_path, path_length, 0);
+      snprintf(first_path, path_length, "%s.part%05d", path, 0);
+      if (0 != (result = ks3fs_getattr(first_path, &st))) {
+        return result;
+      }
+ 
+      if (0 != (result = s3fs_create(real_path, st.st_mode, fi))) {
+        return result;
+      }
+      if (0 != (result = s3fs_open(real_path, fi))) {
+        return result;
+      }
     }
   }
 
