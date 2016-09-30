@@ -1098,6 +1098,7 @@ static int s3fs_mknod(const char *path, mode_t mode, dev_t rdev)
 
 static int ks3fs_create(const char* path, mode_t mode, struct fuse_file_info* fi)
 {
+  // must be first part file
   char real_path[path_length];
   snprintf(real_path, path_length, "%s.part00000", path);
   return s3fs_create(real_path, mode, fi);
@@ -2395,6 +2396,7 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
   snprintf(real_path, path_length, "%s.part%05d", path, cur_file_no);
 
   if (offset == 0) {
+    // for rewrite same file
     s3obj_list_t subpaths;
     get_subpaths(path, subpaths);
 
@@ -2421,6 +2423,7 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
         return -EIO;
       }
  
+      // need split file
       struct stat st;
       char first_path[path_length];
       memset(first_path, path_length, 0);
@@ -2440,6 +2443,7 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
 
   size_t left_size = (cur_file_no + 1) * split_file_size - offset;
   if (left_size < size) {
+    // vfs will rewrite the left
     return s3fs_write(real_path, buf, left_size, real_offset, fi);
   } else {
     return s3fs_write(real_path, buf, size, real_offset, fi);
