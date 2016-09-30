@@ -1979,6 +1979,8 @@ FdEntity* FdManager::Open(const char* path, headers_t* pmeta, ssize_t size, time
     // make new obj
     ent = new FdEntity(path, cache_path.c_str());
 
+    fent[string(path)] = ent;
+#if 0
     if(0 < cache_path.size()){
       // using cache
       fent[string(path)] = ent;
@@ -1994,6 +1996,7 @@ FdEntity* FdManager::Open(const char* path, headers_t* pmeta, ssize_t size, time
       FdManager::MakeRandomTempPath(path, tmppath);
       fent[tmppath] = ent;
     }
+#endif
   }else{
     return NULL;
   }

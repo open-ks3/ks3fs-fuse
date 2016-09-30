@@ -22,6 +22,7 @@
 
 #define FUSE_USE_VERSION      26
 #define FIVE_GB               5368709120LL
+#define FOUR_GB               4294967296LL
 
 #include <fuse.h>
 

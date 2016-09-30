@@ -127,7 +127,9 @@ static int64_t singlepart_copy_limit = FIVE_GB;
 static bool is_specified_endpoint = false;
 static int s3fs_init_deferred_exit_status = 0;
 
+static const size_t path_length   = 1024;
 static size_t postfix_length      = 10;
+static uint64_t split_file_size   = FOUR_GB;
 
 //-------------------------------------------------------------------
 // Static functions : prototype
@@ -852,10 +854,10 @@ static int get_subpaths(const char* path, s3obj_list_t& subpaths)
 
   if(0 != (result = list_bucket(mydirname(path).c_str(), head, NULL))){
     S3FS_PRN_ERR("list_bucket returns error(%d).", result);
-    return result; 
+    return result;
   }
 
-  s3obj_list_t headlist;  
+  s3obj_list_t headlist;
   string file = mybasename(path);
   head.GetNameList(headlist, true, false);  // get name with "/".
 
@@ -916,7 +918,7 @@ static int ks3fs_getattr(const char* path, struct stat* stbuf)
       ctime = st.st_ctime;
     }
   }
-  
+
   if (stbuf) {
     *stbuf = st;
     stbuf->st_size = st_size;
@@ -1097,7 +1099,9 @@ static int s3fs_mknod(const char *path, mode_t mode, dev_t rdev)
 
 static int ks3fs_create(const char* path, mode_t mode, struct fuse_file_info* fi)
 {
-	return s3fs_create(path, mode, fi);
+  char real_path[path_length];
+  snprintf(real_path, path_length, "%s.part00000", path);
+  return s3fs_create(real_path, mode, fi);
 }
 
 static int s3fs_create(const char* path, mode_t mode, struct fuse_file_info* fi)
@@ -1202,7 +1206,26 @@ static int s3fs_mkdir(const char* path, mode_t mode)
 
 static int ks3fs_unlink(const char* path)
 {
-	return s3fs_unlink(path);
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t subpaths;
+  get_subpaths(path, subpaths);
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
+       string subpath = (*liter);
+    if (mydirname(path) == "/") {
+      subpath = mydirname(path) + subpath;
+    } else {
+      subpath = mydirname(path) + "/" + subpath;
+    }
+    if (0 != (result = s3fs_unlink(subpath.c_str()))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_unlink(const char* path)
@@ -2259,7 +2282,9 @@ static int s3fs_truncate(const char* path, off_t size)
 
 static int ks3fs_open(const char* path, struct fuse_file_info* fi)
 {
-	return s3fs_open(path, fi);
+  char real_path[path_length];
+  snprintf(real_path, path_length, "%s.part00000", path);
+  return s3fs_open(path, fi);
 }
 
 static int s3fs_open(const char* path, struct fuse_file_info* fi)
@@ -2440,7 +2465,62 @@ static int s3fs_read(const char* path, char* buf, size_t size, off_t offset, str
 
 static int ks3fs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
-	return s3fs_write(path, buf, size, offset, fi);
+  int result;
+  char real_path[path_length];
+  off_t real_offset = offset%split_file_size;
+  uint32_t cur_file_no = offset/split_file_size;
+
+  S3FS_PRN_DBG("[path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
+
+  memset(real_path, path_length, 0);
+  snprintf(real_path, path_length, "%s.part%05d", path, cur_file_no);
+#if 0
+  if (offset == 0) {
+    s3obj_list_t subpaths;
+    get_subpaths(path, subpaths);
+
+    s3obj_list_t::const_iterator liter;
+    for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
+      string subpath = (*liter);
+      if (subpath != string(real_path)) {
+        if (mydirname(path) == "/") {
+          subpath = mydirname(path) + subpath;
+        } else {
+          subpath = mydirname(path) + "/" + subpath;
+        }
+        s3fs_unlink(subpath.c_str());
+      }
+    }
+  }
+#endif
+  FdEntity* ent;
+  if(NULL == (ent = FdManager::get()->GetFdEntity(real_path))){
+    if (0 == cur_file_no) {
+      return -EIO;
+    }
+
+    struct stat st;
+    char first_path[path_length];
+    memset(first_path, path_length, 0);
+    snprintf(first_path, path_length, "%s.part%05d", path, 0);
+    if (0 != (result = ks3fs_getattr(first_path, &st))) {
+      return result;
+    }
+
+    if (0 != (result = s3fs_create(real_path, st.st_mode, fi))) {
+      return result;
+    }
+    if (0 != (result = s3fs_open(real_path, fi))) {
+      return result;
+    }
+  }
+
+  size_t left_size = (cur_file_no + 1) * split_file_size - offset;
+  if (left_size < size) {
+    return s3fs_write(real_path, buf, left_size, real_offset, fi);
+  } else {
+    return s3fs_write(real_path, buf, size, real_offset, fi);
+  }
 }
 
 static int s3fs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
@@ -2483,7 +2563,30 @@ static int s3fs_statfs(const char* path, struct statvfs* stbuf)
 
 static int ks3fs_flush(const char* path, struct fuse_file_info* fi)
 {
-	return s3fs_flush(path, fi);
+  int result = 0;
+
+  S3FS_PRN_INFO("[path=%s][fd=%llu]", path, (unsigned long long)(fi->fh));
+
+  s3obj_list_t subpaths;
+  get_subpaths(path, subpaths);
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
+       string subpath = (*liter);
+    if (mydirname(path) == "/") {
+      subpath = mydirname(path) + subpath;
+    } else {
+      subpath = mydirname(path) + "/" + subpath;
+    }
+    FdEntity* ent;
+    if(NULL != (ent = FdManager::get()->GetFdEntity(subpath.c_str()))){
+      fi->fh = ent->GetFd();
+      if (0 != (result = s3fs_flush(subpath.c_str(), fi))) {
+        return result;
+      }
+    }
+  }
+  return result;
 }
 
 static int s3fs_flush(const char* path, struct fuse_file_info* fi)
@@ -2548,7 +2651,30 @@ static int s3fs_fsync(const char* path, int datasync, struct fuse_file_info* fi)
 
 static int ks3fs_release(const char* path, struct fuse_file_info* fi)
 {
-	return s3fs_release(path, fi);
+    S3FS_PRN_INFO("[path=%s][fd=%llu]", path, (unsigned long long)(fi->fh));
+
+  int result = 0;
+  s3obj_list_t subpaths;
+  get_subpaths(path, subpaths);
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
+       string subpath = (*liter);
+    if (mydirname(path) == "/") {
+      subpath = mydirname(path) + subpath;
+    } else {
+      subpath = mydirname(path) + "/" + subpath;
+    }
+
+    FdEntity* ent;
+    if(NULL != (ent = FdManager::get()->GetFdEntity(subpath.c_str()))){
+      fi->fh = ent->GetFd();
+      if (0 != (result = s3fs_release(subpath.c_str(), fi))) {
+        return result;
+      }
+    }
+  }
+  return result;
 }
 
 static int s3fs_release(const char* path, struct fuse_file_info* fi)
