@@ -873,6 +873,10 @@ static int get_subpaths(const char* path, s3obj_list_t& subpaths)
       subpaths.push_back(subpath);
     }
   }
+  
+  if (subpaths.size() > 0) {
+    subpaths.sort();
+  }
   S3FS_PRN_INFO1("[path=%s][list=%zu]", path, subpaths.size());
 
   return 0;
@@ -2346,13 +2350,13 @@ static int s3fs_open(const char* path, struct fuse_file_info* fi)
 
 static int ks3fs_list_part_files(const char *path, s3obj_list_t& objs)
 {
-	int result;
+    int result;
     S3ObjList objects;
     s3obj_list_t filter;
     string name = mybasename(path);
-	string parent = mydirname(path);
+    string parent = mydirname(path);
     if(parent == "."){
-      parent = "/";
+        parent = "/";
     }
     if (0 != (result = list_bucket(parent.c_str(), objects, NULL, true))) {
     	return result;
@@ -2367,21 +2371,21 @@ static int ks3fs_list_part_files(const char *path, s3obj_list_t& objs)
     }
     if (objs.size() > 0) {
     	objs.sort();
-    	return result;
     }
-	return result;
+    return result;
 }
 
 
 static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
+	int ret;
 	ssize_t res = 0;
 
 	S3FS_PRN_DBG("[path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
 
 	s3obj_list_t objs;
 
-	if (0 != ks3fs_list_part_files(path, objs)) {
+	if (0 != get_subpaths(path, objs)) {
 		S3FS_PRN_ERR("could not find file from s3(%s)", path);
 		return -EIO;
 	}
@@ -2391,6 +2395,10 @@ static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, st
 	for (s3obj_list_t::iterator iter = objs.begin(); iter != objs.end(); iter ++) {
 
 		string current_file_path = *iter;
+
+		if (0 != (ret = s3fs_open(current_file_path.c_str(), fi))) {
+			return ret;
+		}
 		// for more safty get file stat
 		struct stat current_file_stat;
 		if (0 != s3fs_getattr(current_file_path.c_str(), &current_file_stat)) {
@@ -2400,32 +2408,34 @@ static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, st
 
 		pile_size += current_file_stat.st_size;
 
-		if (pile_size <= size) {
+		if (pile_size <= static_cast<size_t>(offset)) {
 			continue;
 		}
 
-		size_t current_file_remain_size = pile_size - size;
+		bool need_break = false;
+		size_t current_file_remain_size = pile_size - offset;
+		size_t current_file_offset = current_file_stat.st_size - current_file_remain_size;
+		size_t read_size = current_file_remain_size >= size ? size : current_file_remain_size;
 
-		char* buffer = NULL;
+		ret = s3fs_read(current_file_path.c_str(), buf + res, read_size, current_file_offset, fi);
+		if (ret < 0) {
+			if (res > 0) {
+				return static_cast<int>(res);
+			} else {
+				return ret;
+			}
+		} else if (static_cast<size_t>(ret) != read_size) {
+			need_break = true;
+		}
+		res += ret;
+		offset += ret;
+		size -= ret;
 
-		size_t current_size = current_file_stat.st_size - current_file_remain_size;
-
-		if (current_file_remain_size >= offset) {
-			res += s3fs_read((*iter).c_str(), buffer, current_size, offset, fi);
-			char *t = new char[strlen(buf)+strlen(buffer)+1];
-			strcpy(t, buf);
-			strcat(t, buffer);
-			buf = t;
+		if (size == 0 || need_break) {
 			break;
 		}
-		res += s3fs_read((*iter).c_str(), buffer, current_size, current_file_remain_size, fi);
-		char *t = new char[strlen(buf)+strlen(buffer)+1];
-		strcpy(t, buf);
-		strcat(t, buffer);
-		buf = t;
-		offset -= current_file_stat.st_size;
 	}
-	return res;
+	return static_cast<int>(res);
 }
 
 static int s3fs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
