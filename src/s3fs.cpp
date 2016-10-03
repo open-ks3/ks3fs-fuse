@@ -902,14 +902,9 @@ static int list_part_files(const char* path, s3obj_list_t& part_files)
 
 static int ks3fs_getattr(const char* path, struct stat* stbuf)
 {
-
   int result;
 
   S3FS_PRN_INFO("[path=%s]", path);
-
-  if (0 == (result = s3fs_getattr(path, stbuf))) {
-    return 0;
-  }
 
   struct stat st;
   off_t st_size = 0;
@@ -921,6 +916,11 @@ static int ks3fs_getattr(const char* path, struct stat* stbuf)
   s3obj_list_t part_files;
   if (0 != (result = list_part_files(path, part_files))) {
     return result;
+  }
+
+  // for rename dest file
+  if (part_files.size() == 0) {
+    return s3fs_getattr(path, stbuf);
   }
 
   s3obj_list_t::const_iterator liter;
@@ -1683,9 +1683,8 @@ static int ks3fs_rename(const char* from, const char* to)
   s3obj_list_t::const_iterator liter;
   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
     string from_file = (*liter);
-    string to_file = from_file.replace(0, real_from_file.length(), real_to_file);
-    S3FS_PRN_INFO("[from=%s][to=%s]", from_file.c_str(), to_file.c_str());
-    continue;
+    string to_file = (*liter);
+    to_file.replace(0, real_from_file.length(), real_to_file);
     if (0 != (result = s3fs_rename(from_file.c_str(), to_file.c_str()))) {
       return result;
     }
@@ -2648,7 +2647,7 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
       char first_path[path_length];
       memset(first_path, path_length, 0);
       snprintf(first_path, path_length, "%s.part%05d", path, 0);
-      if (0 != (result = ks3fs_getattr(first_path, &st))) {
+      if (0 != (result = s3fs_getattr(first_path, &st))) {
         return result;
       }
  
