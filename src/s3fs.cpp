@@ -866,7 +866,7 @@ static int list_part_files(const char* path, s3obj_list_t& part_files)
 
   struct stat st;
   if (0 == s3fs_getattr(path, &st) && S_ISDIR(st.st_mode)) {
-    part_files.push_back(mybasename(path));
+    part_files.push_back(string(path));
     return 0;
   }
 
@@ -1670,7 +1670,27 @@ static int rename_directory(const char* from, const char* to)
 
 static int ks3fs_rename(const char* from, const char* to)
 {
-  return s3fs_rename(from, to);
+  S3FS_PRN_INFO("[from=%s][to=%s]", from, to);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(from, part_files))) {
+    return result;
+  }
+
+  string real_from_file = string(from);
+  string real_to_file = string(to);
+  s3obj_list_t::const_iterator liter;
+  for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string from_file = (*liter);
+    string to_file = from_file.replace(0, real_from_file.length(), real_to_file);
+    S3FS_PRN_INFO("[from=%s][to=%s]", from_file.c_str(), to_file.c_str());
+    continue;
+    if (0 != (result = s3fs_rename(from_file.c_str(), to_file.c_str()))) {
+      return result;
+    }
+  }
+  return 0;
 }
 
 static int s3fs_rename(const char* from, const char* to)
@@ -1722,7 +1742,23 @@ static int s3fs_link(const char* from, const char* to)
 
 static int ks3fs_chmod(const char* path, mode_t mode)
 {
-  return s3fs_chmod(path, mode);
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_chmod(part_file.c_str(), mode))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_chmod(const char* path, mode_t mode)
@@ -1805,7 +1841,23 @@ static int s3fs_chmod(const char* path, mode_t mode)
 
 static int ks3fs_chmod_nocopy(const char* path, mode_t mode)
 {
-  return s3fs_chmod_nocopy(path, mode);
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_chmod_nocopy(part_file.c_str(), mode))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_chmod_nocopy(const char* path, mode_t mode)
@@ -1889,7 +1941,23 @@ static int s3fs_chmod_nocopy(const char* path, mode_t mode)
 
 static int ks3fs_chown(const char* path, uid_t uid, gid_t gid)
 {
-  return s3fs_chown(path, uid, gid);
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_chown(part_file.c_str(), uid, gid))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_chown(const char* path, uid_t uid, gid_t gid)
@@ -1976,7 +2044,23 @@ static int s3fs_chown(const char* path, uid_t uid, gid_t gid)
 
 static int ks3fs_chown_nocopy(const char* path, uid_t uid, gid_t gid)
 {
-  return s3fs_chown_nocopy(path, uid, gid);
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_chown_nocopy(part_file.c_str(), uid, gid))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_chown_nocopy(const char* path, uid_t uid, gid_t gid)
@@ -2070,7 +2154,23 @@ static int s3fs_chown_nocopy(const char* path, uid_t uid, gid_t gid)
 
 static int ks3fs_utimens(const char* path, const struct timespec ts[2])
 {
-  return s3fs_utimens(path, ts);
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_utimens(part_file.c_str(), ts))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_utimens(const char* path, const struct timespec ts[2])
@@ -2143,7 +2243,23 @@ static int s3fs_utimens(const char* path, const struct timespec ts[2])
 
 static int ks3fs_utimens_nocopy(const char* path, const struct timespec ts[2])
 {
-  return s3fs_utimens_nocopy(path, ts);
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_utimens_nocopy(part_file.c_str(), ts))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_utimens_nocopy(const char* path, const struct timespec ts[2])
@@ -2578,7 +2694,23 @@ static int s3fs_write(const char* path, const char* buf, size_t size, off_t offs
 
 static int ks3fs_statfs(const char* path, struct statvfs* stbuf)
 {
-  return s3fs_statfs(path, stbuf);
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_statfs(part_file.c_str(), stbuf))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_statfs(const char* path, struct statvfs* stbuf)
@@ -2649,7 +2781,27 @@ static int s3fs_flush(const char* path, struct fuse_file_info* fi)
 
 static int ks3fs_fsync(const char* path, int datasync, struct fuse_file_info* fi)
 {
-  return s3fs_fsync(path, datasync, fi);
+  int result = 0;
+
+  S3FS_PRN_INFO("[path=%s][fd=%llu]", path, (unsigned long long)(fi->fh));
+
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter) {
+      string part_file = (*liter);
+      FdEntity* ent;
+      if(NULL != (ent = FdManager::get()->GetFdEntity(part_file.c_str()))){
+        fi->fh = ent->GetFd();
+        if (0 != (result = s3fs_fsync(part_file.c_str(), datasync, fi))) {
+          return result;
+        }
+    }
+  }
+  return result;
 }
 
 // [NOTICE]
