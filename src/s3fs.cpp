@@ -129,7 +129,7 @@ static int s3fs_init_deferred_exit_status = 0;
 
 static const size_t path_length   = 1024;
 static size_t postfix_length      = 10;
-static uint64_t split_file_size   = 4 * 1024 * 1024;
+static uint64_t split_file_size   = FOUR_GB;
 
 //-------------------------------------------------------------------
 // Static functions : prototype
