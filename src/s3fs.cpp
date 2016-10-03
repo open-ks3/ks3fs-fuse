@@ -187,7 +187,7 @@ static int set_bucket(const char* arg);
 static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_args* outargs);
 
 static string get_real_path(string& path);
-static int list_part_files(const char* path, s3obj_list_t& subpaths);
+static int list_part_files(const char* path, s3obj_list_t& part_files);
 static int ks3fs_list_part_files(const char *path, s3obj_list_t &objs);
 
 // ks3 fuse interface functions
@@ -853,18 +853,24 @@ static string get_real_path(string& path)
   }
 }
 
-static int list_part_files(const char* path, s3obj_list_t& subpaths)
+static int list_part_files(const char* path, s3obj_list_t& part_files)
 {
   int result;
   S3ObjList head;
 
   S3FS_PRN_INFO("[path=%s]", path);
 
-  if(0 != (result = check_object_access(mydirname(path).c_str(), X_OK, NULL))){
+  if (0 != (result = check_object_access(mydirname(path).c_str(), X_OK, NULL))){
     return result;
   }
 
-  if(0 != (result = list_bucket(mydirname(path).c_str(), head, NULL))){
+  struct stat st;
+  if (0 == s3fs_getattr(path, &st) && S_ISDIR(st.st_mode)) {
+    part_files.push_back(mybasename(path));
+    return 0;
+  }
+
+  if (0 != (result = list_bucket(mydirname(path).c_str(), head, NULL))){
     S3FS_PRN_ERR("list_bucket returns error(%d).", result);
     return result;
   }
@@ -875,21 +881,21 @@ static int list_part_files(const char* path, s3obj_list_t& subpaths)
 
   s3obj_list_t::const_iterator liter;
   for(liter = headlist.begin(); liter != headlist.end(); ++liter){
-    string subpath = (*liter);
-    if (subpath.length() > postfix_length && file == get_real_path(subpath)) {
+    string part_file = (*liter);
+    if (part_file.length() > postfix_length && file == get_real_path(part_file)) {
       if (mydirname(path) == "/") {
-        subpath = mydirname(path) + subpath;
+        part_file = mydirname(path) + part_file;
       } else {
-        subpath = mydirname(path) + "/" + subpath;
+        part_file = mydirname(path) + "/" + part_file;
       }
-      subpaths.push_back(subpath);
+      part_files.push_back(part_file);
     }
   }
   
-  if (subpaths.size() > 0) {
-    subpaths.sort();
+  if (part_files.size() > 0) {
+    part_files.sort();
   }
-  S3FS_PRN_INFO1("[path=%s][list=%zu]", path, subpaths.size());
+  S3FS_PRN_INFO1("[path=%s][list=%zu]", path, part_files.size());
 
   return 0;
 }
@@ -912,14 +918,15 @@ static int ks3fs_getattr(const char* path, struct stat* stbuf)
   time_t mtime = 0;
   time_t ctime = 0;
 
-  s3obj_list_t subpaths;
-  list_part_files(path, subpaths);
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
 
   s3obj_list_t::const_iterator liter;
-  for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
-    string subpath = (*liter);
-    result = s3fs_getattr(subpath.c_str(), &st);
-    if (result != 0) {
+  for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_getattr(part_file.c_str(), &st))) {
       return result;
     }
     st_size += st.st_size;
@@ -1226,13 +1233,15 @@ static int ks3fs_unlink(const char* path)
   S3FS_PRN_INFO("[path=%s]", path);
 
   int result = 0;
-  s3obj_list_t subpaths;
-  list_part_files(path, subpaths);
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
 
    s3obj_list_t::const_iterator liter;
-   for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
-    string subpath = (*liter);
-    if (0 != (result = s3fs_unlink(subpath.c_str()))) {
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_unlink(part_file.c_str()))) {
       return result;
     }
 
@@ -2495,18 +2504,20 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
 
   if (offset == 0) {
     // for rewrite same file
-    s3obj_list_t subpaths;
-    list_part_files(path, subpaths);
+    s3obj_list_t part_files;
+    if (0 != (result = list_part_files(path, part_files))) {
+      return result;
+    }
 
     s3obj_list_t::const_iterator liter;
-    for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
-      string subpath = (*liter);
-      if (0 == strncmp(subpath.c_str(), real_path, subpath.length())) {
+    for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+      string part_file = (*liter);
+      if (0 == strncmp(part_file.c_str(), real_path, part_file.length())) {
         if (0 != (result = s3fs_open(real_path, fi))) {
           return result;
         }
       } else {
-        s3fs_unlink(subpath.c_str());
+        s3fs_unlink(part_file.c_str());
       }
     }
   } else {
@@ -2587,16 +2598,18 @@ static int ks3fs_flush(const char* path, struct fuse_file_info* fi)
 
   S3FS_PRN_INFO("[path=%s][fd=%llu]", path, (unsigned long long)(fi->fh));
 
-  s3obj_list_t subpaths;
-  list_part_files(path, subpaths);
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
 
    s3obj_list_t::const_iterator liter;
-   for(liter = subpaths.begin(); liter != subpaths.end(); ++liter) {
-      string subpath = (*liter);
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter) {
+      string part_file = (*liter);
       FdEntity* ent;
-      if(NULL != (ent = FdManager::get()->GetFdEntity(subpath.c_str()))){
+      if(NULL != (ent = FdManager::get()->GetFdEntity(part_file.c_str()))){
         fi->fh = ent->GetFd();
-        if (0 != (result = s3fs_flush(subpath.c_str(), fi))) {
+        if (0 != (result = s3fs_flush(part_file.c_str(), fi))) {
           return result;
         }
     }
@@ -2669,16 +2682,18 @@ static int ks3fs_release(const char* path, struct fuse_file_info* fi)
   S3FS_PRN_INFO("[path=%s][fd=%llu]", path, (unsigned long long)(fi->fh));
 
   int result = 0;
-  s3obj_list_t subpaths;
-  list_part_files(path, subpaths);
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
 
   s3obj_list_t::const_iterator liter;
-  for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
-    string subpath = (*liter);
+  for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
     FdEntity* ent;
-    if(NULL != (ent = FdManager::get()->GetFdEntity(subpath.c_str()))){
+    if(NULL != (ent = FdManager::get()->GetFdEntity(part_file.c_str()))){
       fi->fh = ent->GetFd();
-      if (0 != (result = s3fs_release(subpath.c_str(), fi))) {
+      if (0 != (result = s3fs_release(part_file.c_str(), fi))) {
         return result;
       }
     }
@@ -2869,8 +2884,15 @@ static int readdir_multi_head(const char* path, S3ObjList& head, void* buf, fuse
     //
     for(iter = fillerlist.begin(); fillerlist.end() != iter; ++iter){
       struct stat st;
+      string path = (*iter);
       string bpath = mybasename((*iter));
-      bpath = get_real_path(bpath);
+      if(0 != (result = s3fs_getattr(path.c_str(), &st))) {
+        return result;
+      }
+      if (S_ISREG(st.st_mode)) {
+        bpath = get_real_path(bpath);
+      }
+
       if(StatCache::getStatCacheData()->GetStat((*iter), &st)){
         if (file_info.end() == file_info.find(bpath)) {
           file_info[bpath] = st;
@@ -3954,7 +3976,27 @@ static void s3fs_destroy(void*)
 
 static int ks3fs_access(const char* path, int mask)
 {
-  return s3fs_access(path, mask);
+  S3FS_PRN_INFO("[path=%s][mask=%s%s%s%s]", path,
+          ((mask & R_OK) == R_OK) ? "R_OK " : "",
+          ((mask & W_OK) == W_OK) ? "W_OK " : "",
+          ((mask & X_OK) == X_OK) ? "X_OK " : "",
+          (mask == F_OK) ? "F_OK" : "");
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+  s3obj_list_t::const_iterator liter;
+  for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_access(part_file.c_str(), mask))) {
+        return result;
+    }
+  }
+
+  return result;
 }
 
 static int s3fs_access(const char* path, int mask)
