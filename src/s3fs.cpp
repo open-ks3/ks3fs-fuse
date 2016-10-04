@@ -130,7 +130,7 @@ static int s3fs_init_deferred_exit_status = 0;
 
 static const size_t path_length   = 1024;
 static size_t postfix_length      = 10;
-static uint64_t split_file_size   = 4 * 1024 * 1024;
+static uint64_t split_file_size   = FOUR_GB;
 
 //-------------------------------------------------------------------
 // Static functions : prototype
@@ -187,7 +187,8 @@ static int set_moutpoint_attribute(struct stat& mpst);
 static int set_bucket(const char* arg);
 static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_args* outargs);
 
-static int get_subpaths(const char* path, s3obj_list_t& subpaths);
+static string get_real_path(string& path);
+static int list_part_files(const char* path, s3obj_list_t& part_files);
 static int ks3fs_list_part_files(const char *path, s3obj_list_t &objs);
 
 // ks3 fuse interface functions
@@ -842,18 +843,35 @@ static int put_headers(const char* path, headers_t& meta, bool is_copy)
   return 0;
 }
 
-static int get_subpaths(const char* path, s3obj_list_t& subpaths)
+static string get_real_path(string& path)
+{
+  if (path.length() <= postfix_length) return path;
+
+  if (path.substr(path.length() - postfix_length, 5) == ".part") {
+    return path.substr(0, path.length() - postfix_length);
+  } else {
+    return path;
+  }
+}
+
+static int list_part_files(const char* path, s3obj_list_t& part_files)
 {
   int result;
   S3ObjList head;
 
   S3FS_PRN_INFO("[path=%s]", path);
 
-  if(0 != (result = check_object_access(mydirname(path).c_str(), X_OK, NULL))){
+  if (0 != (result = check_object_access(mydirname(path).c_str(), X_OK, NULL))){
     return result;
   }
 
-  if(0 != (result = list_bucket(mydirname(path).c_str(), head, NULL))){
+  struct stat st;
+  if (0 == s3fs_getattr(path, &st) && S_ISDIR(st.st_mode)) {
+    part_files.push_back(string(path));
+    return 0;
+  }
+
+  if (0 != (result = list_bucket(mydirname(path).c_str(), head, NULL))){
     S3FS_PRN_ERR("list_bucket returns error(%d).", result);
     return result;
   }
@@ -864,35 +882,30 @@ static int get_subpaths(const char* path, s3obj_list_t& subpaths)
 
   s3obj_list_t::const_iterator liter;
   for(liter = headlist.begin(); liter != headlist.end(); ++liter){
-    string subpath = (*liter);
-    if (subpath.length() > postfix_length && file == subpath.substr(0, subpath.length() - postfix_length)) {
+    string part_file = (*liter);
+    if (part_file.length() > postfix_length && file == get_real_path(part_file)) {
       if (mydirname(path) == "/") {
-        subpath = mydirname(path) + subpath;
+        part_file = mydirname(path) + part_file;
       } else {
-        subpath = mydirname(path) + "/" + subpath;
+        part_file = mydirname(path) + "/" + part_file;
       }
-      subpaths.push_back(subpath);
+      part_files.push_back(part_file);
     }
   }
   
-  if (subpaths.size() > 0) {
-    subpaths.sort();
+  if (part_files.size() > 0) {
+    part_files.sort();
   }
-  S3FS_PRN_INFO1("[path=%s][list=%zu]", path, subpaths.size());
+  S3FS_PRN_INFO1("[path=%s][list=%zu]", path, part_files.size());
 
   return 0;
 }
 
 static int ks3fs_getattr(const char* path, struct stat* stbuf)
 {
-
   int result;
 
   S3FS_PRN_INFO("[path=%s]", path);
-
-  if (0 == (result = s3fs_getattr(path, stbuf))) {
-    return 0;
-  }
 
   struct stat st;
   off_t st_size = 0;
@@ -901,14 +914,20 @@ static int ks3fs_getattr(const char* path, struct stat* stbuf)
   time_t mtime = 0;
   time_t ctime = 0;
 
-  s3obj_list_t subpaths;
-  get_subpaths(path, subpaths);
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+  // for rename dest file
+  if (part_files.size() == 0) {
+    return s3fs_getattr(path, stbuf);
+  }
 
   s3obj_list_t::const_iterator liter;
-  for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
-    string subpath = (*liter);
-    result = s3fs_getattr(subpath.c_str(), &st);
-    if (result != 0) {
+  for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_getattr(part_file.c_str(), &st))) {
       return result;
     }
     st_size += st.st_size;
@@ -974,7 +993,7 @@ static int s3fs_getattr(const char* path, struct stat* stbuf)
 
 static int ks3fs_readlink(const char* path, char* buf, size_t size)
 {
-	return s3fs_readlink(path, buf, size);
+  return s3fs_readlink(path, buf, size);
 }
 
 static int s3fs_readlink(const char* path, char* buf, size_t size)
@@ -1078,7 +1097,7 @@ static int create_file_object(const char* path, mode_t mode, uid_t uid, gid_t gi
 
 static int ks3fs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
-	return s3fs_mknod(path, mode, rdev);
+  return s3fs_mknod(path, mode, rdev);
 }
 
 static int s3fs_mknod(const char *path, mode_t mode, dev_t rdev)
@@ -1178,7 +1197,7 @@ static int create_directory_object(const char* path, mode_t mode, time_t time, u
 
 static int ks3fs_mkdir(const char* path, mode_t mode)
 {
-	return s3fs_mkdir(path, mode);
+  return s3fs_mkdir(path, mode);
 }
 
 static int s3fs_mkdir(const char* path, mode_t mode)
@@ -1215,13 +1234,15 @@ static int ks3fs_unlink(const char* path)
   S3FS_PRN_INFO("[path=%s]", path);
 
   int result = 0;
-  s3obj_list_t subpaths;
-  get_subpaths(path, subpaths);
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
 
    s3obj_list_t::const_iterator liter;
-   for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
-    string subpath = (*liter);
-    if (0 != (result = s3fs_unlink(subpath.c_str()))) {
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_unlink(part_file.c_str()))) {
       return result;
     }
 
@@ -1264,7 +1285,7 @@ static int directory_empty(const char* path)
 
 static int ks3fs_rmdir(const char* path)
 {
-	return s3fs_rmdir(path);
+  return s3fs_rmdir(path);
 }
 
 static int s3fs_rmdir(const char* path)
@@ -1326,7 +1347,7 @@ static int s3fs_rmdir(const char* path)
 
 static int ks3fs_symlink(const char* from, const char* to)
 {
-	return s3fs_symlink(from, to);
+  return s3fs_symlink(from, to);
 }
 
 static int s3fs_symlink(const char* from, const char* to)
@@ -1650,19 +1671,27 @@ static int rename_directory(const char* from, const char* to)
 
 static int ks3fs_rename(const char* from, const char* to)
 {
-	int result;
-	s3obj_list_t objs;
-	if (0 != ks3fs_list_part_files(from, objs)) {
-		return s3fs_rename(from, to);
-	}
-	for(s3obj_list_t::iterator iter; iter != objs.end(); iter++) {
-		string from_path = mybasename(*iter);
-		string to_path = to+from_path.substr(from_path.length() - 10, 10);
-		if (0 != (result = s3fs_rename((mydirname(*iter)+from_path).c_str(), to_path.c_str()))) {
-			return result;
-		}
-	}
-	return result;
+
+  S3FS_PRN_INFO("[from=%s][to=%s]", from, to);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(from, part_files))) {
+    return result;
+  }
+
+  string real_from_file = string(from);
+  string real_to_file = string(to);
+  s3obj_list_t::const_iterator liter;
+  for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string from_file = (*liter);
+    string to_file = (*liter);
+    to_file.replace(0, real_from_file.length(), real_to_file);
+    if (0 != (result = s3fs_rename(from_file.c_str(), to_file.c_str()))) {
+      return result;
+    }
+  }
+  return 0;
 }
 
 static int s3fs_rename(const char* from, const char* to)
@@ -1703,7 +1732,7 @@ static int s3fs_rename(const char* from, const char* to)
 
 static int ks3fs_link(const char* from, const char* to)
 {
-	return s3fs_link(from, to);
+  return s3fs_link(from, to);
 }
 
 static int s3fs_link(const char* from, const char* to)
@@ -1714,18 +1743,23 @@ static int s3fs_link(const char* from, const char* to)
 
 static int ks3fs_chmod(const char* path, mode_t mode)
 {
-	int result;
-	s3obj_list_t objs;
-	if (0 != ks3fs_list_part_files(path, objs)) {
-		return s3fs_chmod(path, mode);
-	}
-	for(s3obj_list_t::iterator iter; iter != objs.end(); iter++) {
-		string from_path = mydirname(*iter)+mybasename(*iter);
-		if (0 != (result = s3fs_chmod(from_path.c_str(), mode))) {
-			return result;
-		}
-	}
-	return result;
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_chmod(part_file.c_str(), mode))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_chmod(const char* path, mode_t mode)
@@ -1808,7 +1842,23 @@ static int s3fs_chmod(const char* path, mode_t mode)
 
 static int ks3fs_chmod_nocopy(const char* path, mode_t mode)
 {
-	return s3fs_chmod_nocopy(path, mode);
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_chmod_nocopy(part_file.c_str(), mode))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_chmod_nocopy(const char* path, mode_t mode)
@@ -1892,7 +1942,23 @@ static int s3fs_chmod_nocopy(const char* path, mode_t mode)
 
 static int ks3fs_chown(const char* path, uid_t uid, gid_t gid)
 {
-	return s3fs_chown(path, uid, gid);
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_chown(part_file.c_str(), uid, gid))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_chown(const char* path, uid_t uid, gid_t gid)
@@ -1979,7 +2045,23 @@ static int s3fs_chown(const char* path, uid_t uid, gid_t gid)
 
 static int ks3fs_chown_nocopy(const char* path, uid_t uid, gid_t gid)
 {
-	return s3fs_chown_nocopy(path, uid, gid);
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_chown_nocopy(part_file.c_str(), uid, gid))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_chown_nocopy(const char* path, uid_t uid, gid_t gid)
@@ -2073,18 +2155,23 @@ static int s3fs_chown_nocopy(const char* path, uid_t uid, gid_t gid)
 
 static int ks3fs_utimens(const char* path, const struct timespec ts[2])
 {
-	int result;
-	s3obj_list_t objs;
-	if (0 != ks3fs_list_part_files(path, objs)) {
-		return s3fs_utimens(path, ts);
-	}
-	for(s3obj_list_t::iterator iter; iter != objs.end(); iter++) {
-		string from_path = mydirname(*iter)+mybasename(*iter);
-		if (0 != (result = s3fs_utimens(from_path.c_str(), ts))) {
-			return result;
-		}
-	}
-	return result;
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_utimens(part_file.c_str(), ts))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_utimens(const char* path, const struct timespec ts[2])
@@ -2157,7 +2244,23 @@ static int s3fs_utimens(const char* path, const struct timespec ts[2])
 
 static int ks3fs_utimens_nocopy(const char* path, const struct timespec ts[2])
 {
-	return s3fs_utimens_nocopy(path, ts);
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_utimens_nocopy(part_file.c_str(), ts))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_utimens_nocopy(const char* path, const struct timespec ts[2])
@@ -2247,7 +2350,7 @@ static int s3fs_utimens_nocopy(const char* path, const struct timespec ts[2])
 
 static int ks3fs_truncate(const char* path, off_t size)
 {
-	return s3fs_truncate(path, size);
+  return s3fs_truncate(path, size);
 }
 
 static int s3fs_truncate(const char* path, off_t size)
@@ -2409,70 +2512,71 @@ static int ks3fs_list_part_files(const char *path, s3obj_list_t& objs)
     }else {
     	result = -EIO;
     }
+
     return result;
 }
 
 
 static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
-	int ret;
-	ssize_t res = 0;
+  int ret;
+  ssize_t res = 0;
 
-	S3FS_PRN_DBG("[path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
+  S3FS_PRN_DBG("[path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
 
-	s3obj_list_t objs;
+  s3obj_list_t objs;
 
-	if (0 != get_subpaths(path, objs)) {
-		S3FS_PRN_ERR("could not find file from s3(%s)", path);
-		return -EIO;
-	}
+  if (0 != list_part_files(path, objs)) {
+    S3FS_PRN_ERR("could not find file from s3(%s)", path);
+    return -EIO;
+  }
 
-	size_t pile_size = 0;
+  size_t pile_size = 0;
 
-	for (s3obj_list_t::iterator iter = objs.begin(); iter != objs.end(); iter ++) {
+  for (s3obj_list_t::iterator iter = objs.begin(); iter != objs.end(); iter ++) {
 
-		string current_file_path = *iter;
+    string current_file_path = *iter;
 
-		if (0 != (ret = s3fs_open(current_file_path.c_str(), fi))) {
-			return ret;
-		}
-		// for more safty get file stat
-		struct stat current_file_stat;
-		if (0 != s3fs_getattr(current_file_path.c_str(), &current_file_stat)) {
-			S3FS_PRN_ERR("get file (%s) attribute error", path);
-			return -EIO;
-		}
+    if (0 != (ret = s3fs_open(current_file_path.c_str(), fi))) {
+      return ret;
+    }
+    // for more safty get file stat
+    struct stat current_file_stat;
+    if (0 != s3fs_getattr(current_file_path.c_str(), &current_file_stat)) {
+      S3FS_PRN_ERR("get file (%s) attribute error", path);
+      return -EIO;
+    }
 
-		pile_size += current_file_stat.st_size;
+    pile_size += current_file_stat.st_size;
 
-		if (pile_size <= static_cast<size_t>(offset)) {
-			continue;
-		}
+    if (pile_size <= static_cast<size_t>(offset)) {
+      continue;
+    }
 
-		bool need_break = false;
-		size_t current_file_remain_size = pile_size - offset;
-		size_t current_file_offset = current_file_stat.st_size - current_file_remain_size;
-		size_t read_size = current_file_remain_size >= size ? size : current_file_remain_size;
+    bool need_break = false;
+    size_t current_file_remain_size = pile_size - offset;
+    size_t current_file_offset = current_file_stat.st_size - current_file_remain_size;
+    size_t read_size = current_file_remain_size >= size ? size : current_file_remain_size;
 
-		ret = s3fs_read(current_file_path.c_str(), buf + res, read_size, current_file_offset, fi);
-		if (ret < 0) {
-			if (res > 0) {
-				return static_cast<int>(res);
-			} else {
-				return ret;
-			}
-		} else if (static_cast<size_t>(ret) != read_size) {
-			need_break = true;
-		}
-		res += ret;
-		offset += ret;
-		size -= ret;
+    ret = s3fs_read(current_file_path.c_str(), buf + res, read_size, current_file_offset, fi);
+    if (ret < 0) {
+      if (res > 0) {
+        return static_cast<int>(res);
+      } else {
+        return ret;
+      }
+    } else if (static_cast<size_t>(ret) != read_size) {
+      need_break = true;
+    }
+    res += ret;
+    offset += ret;
+    size -= ret;
 
-		if (size == 0 || need_break) {
-			break;
-		}
-	}
-	return static_cast<int>(res);
+    if (size == 0 || need_break) {
+      break;
+    }
+  }
+  return static_cast<int>(res);
 }
 
 static int s3fs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
@@ -2520,18 +2624,20 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
 
   if (offset == 0) {
     // for rewrite same file
-    s3obj_list_t subpaths;
-    get_subpaths(path, subpaths);
+    s3obj_list_t part_files;
+    if (0 != (result = list_part_files(path, part_files))) {
+      return result;
+    }
 
     s3obj_list_t::const_iterator liter;
-    for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
-      string subpath = (*liter);
-      if (0 == strncmp(subpath.c_str(), real_path, subpath.length())) {
+    for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+      string part_file = (*liter);
+      if (0 == strncmp(part_file.c_str(), real_path, part_file.length())) {
         if (0 != (result = s3fs_open(real_path, fi))) {
           return result;
         }
       } else {
-        s3fs_unlink(subpath.c_str());
+        s3fs_unlink(part_file.c_str());
       }
     }
   } else {
@@ -2546,7 +2652,7 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
       char first_path[path_length];
       memset(first_path, path_length, 0);
       snprintf(first_path, path_length, "%s.part%05d", path, 0);
-      if (0 != (result = ks3fs_getattr(first_path, &st))) {
+      if (0 != (result = s3fs_getattr(first_path, &st))) {
         return result;
       }
  
@@ -2592,7 +2698,23 @@ static int s3fs_write(const char* path, const char* buf, size_t size, off_t offs
 
 static int ks3fs_statfs(const char* path, struct statvfs* stbuf)
 {
-	return s3fs_statfs(path, stbuf);
+  S3FS_PRN_INFO("[path=%s]", path);
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_statfs(part_file.c_str(), stbuf))) {
+      return result;
+    }
+
+  }
+  return 0;
 }
 
 static int s3fs_statfs(const char* path, struct statvfs* stbuf)
@@ -2612,16 +2734,18 @@ static int ks3fs_flush(const char* path, struct fuse_file_info* fi)
 
   S3FS_PRN_INFO("[path=%s][fd=%llu]", path, (unsigned long long)(fi->fh));
 
-  s3obj_list_t subpaths;
-  get_subpaths(path, subpaths);
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
 
    s3obj_list_t::const_iterator liter;
-   for(liter = subpaths.begin(); liter != subpaths.end(); ++liter) {
-      string subpath = (*liter);
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter) {
+      string part_file = (*liter);
       FdEntity* ent;
-      if(NULL != (ent = FdManager::get()->GetFdEntity(subpath.c_str()))){
+      if(NULL != (ent = FdManager::get()->GetFdEntity(part_file.c_str()))){
         fi->fh = ent->GetFd();
-        if (0 != (result = s3fs_flush(subpath.c_str(), fi))) {
+        if (0 != (result = s3fs_flush(part_file.c_str(), fi))) {
           return result;
         }
     }
@@ -2661,11 +2785,27 @@ static int s3fs_flush(const char* path, struct fuse_file_info* fi)
 
 static int ks3fs_fsync(const char* path, int datasync, struct fuse_file_info* fi)
 {
-	s3obj_list_t objs;
-	if (0 != ks3fs_list_part_files(path, objs)) {
-		return s3fs_fsync(path, datasync, fi);
-	}
-	return s3fs_fsync(objs.back().c_str(), datasync, fi);
+  int result = 0;
+
+  S3FS_PRN_INFO("[path=%s][fd=%llu]", path, (unsigned long long)(fi->fh));
+
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+   s3obj_list_t::const_iterator liter;
+   for(liter = part_files.begin(); liter != part_files.end(); ++liter) {
+      string part_file = (*liter);
+      FdEntity* ent;
+      if(NULL != (ent = FdManager::get()->GetFdEntity(part_file.c_str()))){
+        fi->fh = ent->GetFd();
+        if (0 != (result = s3fs_fsync(part_file.c_str(), datasync, fi))) {
+          return result;
+        }
+    }
+  }
+  return result;
 }
 
 // [NOTICE]
@@ -2698,16 +2838,18 @@ static int ks3fs_release(const char* path, struct fuse_file_info* fi)
   S3FS_PRN_INFO("[path=%s][fd=%llu]", path, (unsigned long long)(fi->fh));
 
   int result = 0;
-  s3obj_list_t subpaths;
-  get_subpaths(path, subpaths);
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
 
   s3obj_list_t::const_iterator liter;
-  for(liter = subpaths.begin(); liter != subpaths.end(); ++liter){
-    string subpath = (*liter);
+  for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
     FdEntity* ent;
-    if(NULL != (ent = FdManager::get()->GetFdEntity(subpath.c_str()))){
+    if(NULL != (ent = FdManager::get()->GetFdEntity(part_file.c_str()))){
       fi->fh = ent->GetFd();
-      if (0 != (result = s3fs_release(subpath.c_str(), fi))) {
+      if (0 != (result = s3fs_release(part_file.c_str(), fi))) {
         return result;
       }
     }
@@ -2757,7 +2899,7 @@ static int s3fs_release(const char* path, struct fuse_file_info* fi)
 
 static int ks3fs_opendir(const char* path, struct fuse_file_info* fi)
 {
-	return s3fs_opendir(path, fi);
+  return s3fs_opendir(path, fi);
 }
 
 static int s3fs_opendir(const char* path, struct fuse_file_info* fi)
@@ -2829,6 +2971,8 @@ static int readdir_multi_head(const char* path, S3ObjList& head, void* buf, fuse
   s3obj_list_t  headlist;
   s3obj_list_t  fillerlist;
   int           result = 0;
+  map<string, struct stat> file_info;
+  map<string, struct stat>::iterator file_info_iter;
 
   S3FS_PRN_INFO1("[path=%s][list=%zu]", path, headlist.size());
 
@@ -2896,9 +3040,32 @@ static int readdir_multi_head(const char* path, S3ObjList& head, void* buf, fuse
     //
     for(iter = fillerlist.begin(); fillerlist.end() != iter; ++iter){
       struct stat st;
+      string path = (*iter);
       string bpath = mybasename((*iter));
+      if(0 != (result = s3fs_getattr(path.c_str(), &st))) {
+        return result;
+      }
+      if (S_ISREG(st.st_mode)) {
+        bpath = get_real_path(bpath);
+      }
+
       if(StatCache::getStatCacheData()->GetStat((*iter), &st)){
-        filler(buf, bpath.c_str(), &st, 0);
+        if (file_info.end() == file_info.find(bpath)) {
+          file_info[bpath] = st;
+        } else {
+          file_info[bpath].st_size += st.st_size;
+          file_info[bpath].st_blocks += st.st_blocks;
+          if (file_info[bpath].st_atime < st.st_atime) {
+            file_info[bpath].st_atime = st.st_atime;
+          }
+          if (file_info[bpath].st_mtime < st.st_mtime) {
+            file_info[bpath].st_mtime = st.st_mtime;
+          }
+          if (file_info[bpath].st_ctime < st.st_ctime) {
+            file_info[bpath].st_ctime = st.st_ctime;
+          }
+        }
+        //filler(buf, bpath.c_str(), &st, 0);
       }else{
         S3FS_PRN_INFO2("Could not find %s file in stat cache.", (*iter).c_str());
         filler(buf, bpath.c_str(), 0, 0);
@@ -2908,23 +3075,19 @@ static int readdir_multi_head(const char* path, S3ObjList& head, void* buf, fuse
     // reinit for loop.
     curlmulti.Clear();
   }
+
+  for (file_info_iter = file_info.begin(); file_info_iter != file_info.end(); ++file_info_iter){
+    const string& bpath = file_info_iter->first;
+    struct stat& st = file_info_iter->second;
+    filler(buf, bpath.c_str(), &st, 0);
+  }
   return result;
 }
 
 static int ks3fs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi)
 {
-
-
-	S3FS_PRN_ERR("*******************************");
-	s3obj_list_t objs;
-	ks3fs_list_part_files(path, objs);
-	S3FS_PRN_INFO("list part file objs");
-	for(s3obj_list_t::iterator iter=objs.begin(); iter != objs.end(); iter++) {
-		S3FS_PRN_INFO("=============== %s", (*iter).c_str());
-	}
-	S3FS_PRN_ERR("*******************************");
-
-	return s3fs_readdir(path, buf, filler, offset, fi);
+  S3FS_PRN_INFO("[path=%s]", path);
+  return s3fs_readdir(path, buf, filler, offset, fi);
 }
 
 static int s3fs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi)
@@ -3878,7 +4041,7 @@ static void s3fs_exit_fuseloop(int exit_status) {
 
 static void* ks3fs_init(struct fuse_conn_info* conn)
 {
-	return s3fs_init(conn);
+  return s3fs_init(conn);
 }
 
 static void* s3fs_init(struct fuse_conn_info* conn)
@@ -3948,7 +4111,7 @@ static void* s3fs_init(struct fuse_conn_info* conn)
 
 static void ks3fs_destroy(void* args)
 {
-	return s3fs_destroy(args);
+  return s3fs_destroy(args);
 }
 
 static void s3fs_destroy(void*)
@@ -3969,7 +4132,27 @@ static void s3fs_destroy(void*)
 
 static int ks3fs_access(const char* path, int mask)
 {
-	return s3fs_access(path, mask);
+  S3FS_PRN_INFO("[path=%s][mask=%s%s%s%s]", path,
+          ((mask & R_OK) == R_OK) ? "R_OK " : "",
+          ((mask & W_OK) == W_OK) ? "W_OK " : "",
+          ((mask & X_OK) == X_OK) ? "X_OK " : "",
+          (mask == F_OK) ? "F_OK" : "");
+
+  int result = 0;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
+    return result;
+  }
+
+  s3obj_list_t::const_iterator liter;
+  for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+    string part_file = (*liter);
+    if (0 != (result = s3fs_access(part_file.c_str(), mask))) {
+        return result;
+    }
+  }
+
+  return result;
 }
 
 static int s3fs_access(const char* path, int mask)
@@ -5478,7 +5661,7 @@ int main(int argc, char* argv[])
     exit(EXIT_FAILURE);
   }
 
-  s3fs_oper.getattr   = s3fs_getattr;
+  s3fs_oper.getattr   = ks3fs_getattr;
   s3fs_oper.readlink  = ks3fs_readlink;
   s3fs_oper.mknod     = ks3fs_mknod;
   s3fs_oper.mkdir     = ks3fs_mkdir;
