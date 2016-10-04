@@ -130,6 +130,7 @@ static int s3fs_init_deferred_exit_status = 0;
 
 static const size_t path_length   = 1024;
 static size_t postfix_length      = 10;
+static bool read_use_split_file_size = true;
 static uint64_t split_file_size   = FOUR_GB;
 
 //-------------------------------------------------------------------
@@ -2540,14 +2541,20 @@ static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, st
     if (0 != (ret = s3fs_open(current_file_path.c_str(), fi))) {
       return ret;
     }
-    // for more safty get file stat
-    struct stat current_file_stat;
-    if (0 != s3fs_getattr(current_file_path.c_str(), &current_file_stat)) {
-      S3FS_PRN_ERR("get file (%s) attribute error", path);
-      return -EIO;
+
+    //if set read_use_split_file_size true use split_file_size
+    //else get file stat
+    off_t stat_size = split_file_size;
+    if (!read_use_split_file_size) {
+      struct stat current_file_stat;
+      if (0 != s3fs_getattr(current_file_path.c_str(), &current_file_stat)) {
+        S3FS_PRN_ERR("get file (%s) attribute error", path);
+        return -EIO;
+      }
+      stat_size = current_file_stat.st_size;
     }
 
-    pile_size += current_file_stat.st_size;
+    pile_size += stat_size;
 
     if (pile_size <= static_cast<size_t>(offset)) {
       continue;
@@ -2555,7 +2562,7 @@ static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, st
 
     bool need_break = false;
     size_t current_file_remain_size = pile_size - offset;
-    size_t current_file_offset = current_file_stat.st_size - current_file_remain_size;
+    size_t current_file_offset = stat_size - current_file_remain_size;
     size_t read_size = current_file_remain_size >= size ? size : current_file_remain_size;
 
     ret = s3fs_read(current_file_path.c_str(), buf + res, read_size, current_file_offset, fi);
@@ -5418,6 +5425,23 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
       }
       return 0;
     }
+
+    if (0 == strcmp(arg, "read_use_split_file_size")) {
+    	read_use_split_file_size = true;
+    	return 0;
+    }else if (0 == STR2NCMP(arg, "read_use_split_file_size=")) {
+      const char* strflag = strchr(arg, '=') + sizeof(char);
+	  if(0 == strcmp(strflag, "true") || 0 == strcmp(strflag, "1")){
+		  read_use_split_file_size = true;
+	  }else if(0 == strcmp(strflag, "false") || 0 == strcmp(strflag, "0")){
+		  read_use_split_file_size = false;
+	  }else{
+		S3FS_PRN_EXIT("option read_use_split_file_size has unknown parameter(%s).", strflag);
+		return -1;
+	  }
+    	return 0;
+    }
+
     //
     // debug option for s3fs
     //
