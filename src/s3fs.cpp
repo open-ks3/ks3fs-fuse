@@ -43,6 +43,7 @@
 #include <map>
 #include <string>
 #include <list>
+#include <regex>
 
 #include "common.h"
 #include "s3fs.h"
@@ -1649,7 +1650,19 @@ static int rename_directory(const char* from, const char* to)
 
 static int ks3fs_rename(const char* from, const char* to)
 {
-	return s3fs_rename(from, to);
+	int result;
+	s3obj_list_t objs;
+	if (0 != ks3fs_list_part_files(from, objs)) {
+		return s3fs_rename(from, to);
+	}
+	for(s3obj_list_t::iterator iter; iter != objs.end(); iter++) {
+		string from_path = mybasename(*iter);
+		string to_path = to+from_path.substr(from_path.length() - 10, 10);
+		if (0 != (result = s3fs_rename((mydirname(*iter)+from_path).c_str(), to_path.c_str()))) {
+			return result;
+		}
+	}
+	return result;
 }
 
 static int s3fs_rename(const char* from, const char* to)
@@ -1701,7 +1714,18 @@ static int s3fs_link(const char* from, const char* to)
 
 static int ks3fs_chmod(const char* path, mode_t mode)
 {
-	return s3fs_chmod(path, mode);
+	int result;
+	s3obj_list_t objs;
+	if (0 != ks3fs_list_part_files(path, objs)) {
+		return s3fs_chmod(path, mode);
+	}
+	for(s3obj_list_t::iterator iter; iter != objs.end(); iter++) {
+		string from_path = mydirname(*iter)+mybasename(*iter);
+		if (0 != (result = s3fs_chmod(from_path.c_str(), mode))) {
+			return result;
+		}
+	}
+	return result;
 }
 
 static int s3fs_chmod(const char* path, mode_t mode)
@@ -2049,7 +2073,18 @@ static int s3fs_chown_nocopy(const char* path, uid_t uid, gid_t gid)
 
 static int ks3fs_utimens(const char* path, const struct timespec ts[2])
 {
-	return s3fs_utimens(path, ts);
+	int result;
+	s3obj_list_t objs;
+	if (0 != ks3fs_list_part_files(path, objs)) {
+		return s3fs_utimens(path, ts);
+	}
+	for(s3obj_list_t::iterator iter; iter != objs.end(); iter++) {
+		string from_path = mydirname(*iter)+mybasename(*iter);
+		if (0 != (result = s3fs_utimens(from_path.c_str(), ts))) {
+			return result;
+		}
+	}
+	return result;
 }
 
 static int s3fs_utimens(const char* path, const struct timespec ts[2])
@@ -2358,19 +2393,21 @@ static int ks3fs_list_part_files(const char *path, s3obj_list_t& objs)
     if(parent == "."){
         parent = "/";
     }
-    if (0 != (result = list_bucket(parent.c_str(), objects, NULL, true))) {
+    if (0 != (result = list_bucket(parent.c_str(), objects, NULL))) {
     	return result;
     }
     objects.GetNameList(filter);
+    const regex pattern("^"+name+"\\.part\\d{5}$");
     s3obj_list_t::iterator iter;
     for (iter = filter.begin(); iter != filter.end(); iter ++) {
-    	string::size_type idx = (*iter).find(name);
-    	if (idx != string::npos) {
+    	if (regex_match((*iter), pattern)){
     		objs.push_back((*iter));
     	}
     }
     if (objs.size() > 0) {
     	objs.sort();
+    }else {
+    	result = -EIO;
     }
     return result;
 }
@@ -2624,7 +2661,11 @@ static int s3fs_flush(const char* path, struct fuse_file_info* fi)
 
 static int ks3fs_fsync(const char* path, int datasync, struct fuse_file_info* fi)
 {
-	return s3fs_fsync(path, datasync, fi);
+	s3obj_list_t objs;
+	if (0 != ks3fs_list_part_files(path, objs)) {
+		return s3fs_fsync(path, datasync, fi);
+	}
+	return s3fs_fsync(objs.back().c_str(), datasync, fi);
 }
 
 // [NOTICE]
@@ -2872,6 +2913,17 @@ static int readdir_multi_head(const char* path, S3ObjList& head, void* buf, fuse
 
 static int ks3fs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi)
 {
+
+
+	S3FS_PRN_ERR("*******************************");
+	s3obj_list_t objs;
+	ks3fs_list_part_files(path, objs);
+	S3FS_PRN_INFO("list part file objs");
+	for(s3obj_list_t::iterator iter=objs.begin(); iter != objs.end(); iter++) {
+		S3FS_PRN_INFO("=============== %s", (*iter).c_str());
+	}
+	S3FS_PRN_ERR("*******************************");
+
 	return s3fs_readdir(path, buf, filler, offset, fi);
 }
 
@@ -5426,7 +5478,7 @@ int main(int argc, char* argv[])
     exit(EXIT_FAILURE);
   }
 
-  s3fs_oper.getattr   = ks3fs_getattr;
+  s3fs_oper.getattr   = s3fs_getattr;
   s3fs_oper.readlink  = ks3fs_readlink;
   s3fs_oper.mknod     = ks3fs_mknod;
   s3fs_oper.mkdir     = ks3fs_mkdir;
