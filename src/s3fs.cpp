@@ -3073,37 +3073,50 @@ static int readdir_multi_head(const char* path, S3ObjList& head, void* buf, fuse
     // populate fuse buffer
     // here is best posision, because a case is cache size < files in directory
     //
-    for(iter = fillerlist.begin(); fillerlist.end() != iter; ++iter){
-      struct stat st;
-      string path = (*iter);
-      string bpath = mybasename((*iter));
-      if(0 != (result = s3fs_getattr(path.c_str(), &st))) {
-        return result;
-      }
-      if (S_ISREG(st.st_mode)) {
-        bpath = get_real_path(bpath);
-      }
-
-      if(StatCache::getStatCacheData()->GetStat((*iter), &st)){
-        if (file_info.end() == file_info.find(bpath)) {
-          file_info[bpath] = st;
-        } else {
-          file_info[bpath].st_size += st.st_size;
-          file_info[bpath].st_blocks += st.st_blocks;
-          if (file_info[bpath].st_atime < st.st_atime) {
-            file_info[bpath].st_atime = st.st_atime;
-          }
-          if (file_info[bpath].st_mtime < st.st_mtime) {
-            file_info[bpath].st_mtime = st.st_mtime;
-          }
-          if (file_info[bpath].st_ctime < st.st_ctime) {
-            file_info[bpath].st_ctime = st.st_ctime;
-          }
+    if (!no_split_file) {
+      for(iter = fillerlist.begin(); fillerlist.end() != iter; ++iter){
+        struct stat st;
+        string path = (*iter);
+        string bpath = mybasename((*iter));
+        if(0 != (result = s3fs_getattr(path.c_str(), &st))) {
+          return result;
         }
-        //filler(buf, bpath.c_str(), &st, 0);
-      }else{
-        S3FS_PRN_INFO2("Could not find %s file in stat cache.", (*iter).c_str());
-        filler(buf, bpath.c_str(), 0, 0);
+        if (S_ISREG(st.st_mode)) {
+          bpath = get_real_path(bpath);
+        }
+
+        if(StatCache::getStatCacheData()->GetStat((*iter), &st)){
+          if (file_info.end() == file_info.find(bpath)) {
+            file_info[bpath] = st;
+          } else {
+            file_info[bpath].st_size += st.st_size;
+            file_info[bpath].st_blocks += st.st_blocks;
+            if (file_info[bpath].st_atime < st.st_atime) {
+              file_info[bpath].st_atime = st.st_atime;
+            }
+            if (file_info[bpath].st_mtime < st.st_mtime) {
+              file_info[bpath].st_mtime = st.st_mtime;
+            }
+            if (file_info[bpath].st_ctime < st.st_ctime) {
+              file_info[bpath].st_ctime = st.st_ctime;
+            }
+          }
+          //filler(buf, bpath.c_str(), &st, 0);
+        }else{
+          S3FS_PRN_INFO2("Could not find %s file in stat cache.", (*iter).c_str());
+          filler(buf, bpath.c_str(), 0, 0);
+        }
+      }
+    } else {
+      for(iter = fillerlist.begin(); fillerlist.end() != iter; ++iter){
+        struct stat st;
+        string bpath = mybasename((*iter));
+        if(StatCache::getStatCacheData()->GetStat((*iter), &st)){
+          filler(buf, bpath.c_str(), &st, 0);
+        }else{
+          S3FS_PRN_INFO2("Could not find %s file in stat cache.", (*iter).c_str());
+          filler(buf, bpath.c_str(), 0, 0);
+        }
       }
     }
 
@@ -3111,10 +3124,12 @@ static int readdir_multi_head(const char* path, S3ObjList& head, void* buf, fuse
     curlmulti.Clear();
   }
 
-  for (file_info_iter = file_info.begin(); file_info_iter != file_info.end(); ++file_info_iter){
-    const string& bpath = file_info_iter->first;
-    struct stat& st = file_info_iter->second;
-    filler(buf, bpath.c_str(), &st, 0);
+  if (!no_split_file) {
+    for (file_info_iter = file_info.begin(); file_info_iter != file_info.end(); ++file_info_iter){
+      const string& bpath = file_info_iter->first;
+      struct stat& st = file_info_iter->second;
+      filler(buf, bpath.c_str(), &st, 0);
+    }
   }
   return result;
 }
