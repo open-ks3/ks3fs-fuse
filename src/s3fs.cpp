@@ -130,8 +130,9 @@ static int s3fs_init_deferred_exit_status = 0;
 
 static const size_t path_length   = 1024;
 static size_t postfix_length      = 10;
-static bool read_use_split_file_size = true;
+static bool no_split_file         = false;
 static uint64_t split_file_size   = FOUR_GB;
+static bool read_use_split_file_size = true;
 
 //-------------------------------------------------------------------
 // Static functions : prototype
@@ -5454,19 +5455,35 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
     }
 
     if (0 == strcmp(arg, "read_use_split_file_size")) {
-    	read_use_split_file_size = true;
-    	return 0;
+      read_use_split_file_size = true;
+      return 0;
     }else if (0 == STR2NCMP(arg, "read_use_split_file_size=")) {
       const char* strflag = strchr(arg, '=') + sizeof(char);
-	  if(0 == strcmp(strflag, "true") || 0 == strcmp(strflag, "1")){
-		  read_use_split_file_size = true;
-	  }else if(0 == strcmp(strflag, "false") || 0 == strcmp(strflag, "0")){
-		  read_use_split_file_size = false;
-	  }else{
-		S3FS_PRN_EXIT("option read_use_split_file_size has unknown parameter(%s).", strflag);
-		return -1;
-	  }
-    	return 0;
+      if(0 == strcmp(strflag, "true") || 0 == strcmp(strflag, "1")){
+        read_use_split_file_size = true;
+      }else if(0 == strcmp(strflag, "false") || 0 == strcmp(strflag, "0")){
+        read_use_split_file_size = false;
+      }else{
+        S3FS_PRN_EXIT("option read_use_split_file_size has unknown parameter(%s).", strflag);
+        return -1;
+      }
+      return 0;
+    }
+
+    if (0 == strcmp(arg, "no_split_file")) {
+      no_split_file = true;
+      return 0;
+    }else if (0 == STR2NCMP(arg, "no_split_file=")) {
+      const char* strflag = strchr(arg, '=') + sizeof(char);
+      if(0 == strcmp(strflag, "true") || 0 == strcmp(strflag, "1")){
+        no_split_file = true;
+      }else if(0 == strcmp(strflag, "false") || 0 == strcmp(strflag, "0")){
+        no_split_file = false;
+      }else{
+        S3FS_PRN_EXIT("option no_split_file has unknown parameter(%s).", strflag);
+        return -1;
+      }
+      return 0;
     }
 
     //
@@ -5712,43 +5729,77 @@ int main(int argc, char* argv[])
     exit(EXIT_FAILURE);
   }
 
-  s3fs_oper.getattr   = ks3fs_getattr;
-  s3fs_oper.readlink  = ks3fs_readlink;
-  s3fs_oper.mknod     = ks3fs_mknod;
-  s3fs_oper.mkdir     = ks3fs_mkdir;
-  s3fs_oper.unlink    = ks3fs_unlink;
-  s3fs_oper.rmdir     = ks3fs_rmdir;
-  s3fs_oper.symlink   = ks3fs_symlink;
-  s3fs_oper.rename    = ks3fs_rename;
-  s3fs_oper.link      = ks3fs_link;
-  if(!nocopyapi){
-    s3fs_oper.chmod   = ks3fs_chmod;
-    s3fs_oper.chown   = ks3fs_chown;
-    s3fs_oper.utimens = ks3fs_utimens;
-  }else{
-    s3fs_oper.chmod   = ks3fs_chmod_nocopy;
-    s3fs_oper.chown   = ks3fs_chown_nocopy;
-    s3fs_oper.utimens = ks3fs_utimens_nocopy;
-  }
-  s3fs_oper.truncate  = ks3fs_truncate;
-  s3fs_oper.open      = ks3fs_open;
-  if (read_use_split_file_size) {
-    s3fs_oper.read      = ks3fs_read_use_split_file_size;
+  if (!no_split_file) {
+    s3fs_oper.getattr   = ks3fs_getattr;
+    s3fs_oper.readlink  = ks3fs_readlink;
+    s3fs_oper.mknod     = ks3fs_mknod;
+    s3fs_oper.mkdir     = ks3fs_mkdir;
+    s3fs_oper.unlink    = ks3fs_unlink;
+    s3fs_oper.rmdir     = ks3fs_rmdir;
+    s3fs_oper.symlink   = ks3fs_symlink;
+    s3fs_oper.rename    = ks3fs_rename;
+    s3fs_oper.link      = ks3fs_link;
+    if(!nocopyapi){
+      s3fs_oper.chmod   = ks3fs_chmod;
+      s3fs_oper.chown   = ks3fs_chown;
+      s3fs_oper.utimens = ks3fs_utimens;
+    }else{
+      s3fs_oper.chmod   = ks3fs_chmod_nocopy;
+      s3fs_oper.chown   = ks3fs_chown_nocopy;
+      s3fs_oper.utimens = ks3fs_utimens_nocopy;
+    }
+    s3fs_oper.truncate  = ks3fs_truncate;
+    s3fs_oper.open      = ks3fs_open;
+    if (read_use_split_file_size) {
+      s3fs_oper.read      = ks3fs_read_use_split_file_size;
+    } else {
+      s3fs_oper.read      = ks3fs_read;
+    }
+    s3fs_oper.write     = ks3fs_write;
+    s3fs_oper.statfs    = ks3fs_statfs;
+    s3fs_oper.flush     = ks3fs_flush;
+    s3fs_oper.fsync     = ks3fs_fsync;
+    s3fs_oper.release   = ks3fs_release;
+    s3fs_oper.opendir   = ks3fs_opendir;
+    s3fs_oper.readdir   = ks3fs_readdir;
+    s3fs_oper.init      = ks3fs_init;
+    s3fs_oper.destroy   = ks3fs_destroy;
+    s3fs_oper.access    = ks3fs_access;
+    s3fs_oper.create    = ks3fs_create;
   } else {
-    s3fs_oper.read      = ks3fs_read;
+    s3fs_oper.getattr   = s3fs_getattr;
+    s3fs_oper.readlink  = s3fs_readlink;
+    s3fs_oper.mknod     = s3fs_mknod;
+    s3fs_oper.mkdir     = s3fs_mkdir;
+    s3fs_oper.unlink    = s3fs_unlink;
+    s3fs_oper.rmdir     = s3fs_rmdir;
+    s3fs_oper.symlink   = s3fs_symlink;
+    s3fs_oper.rename    = s3fs_rename;
+    s3fs_oper.link      = s3fs_link;
+    if(!nocopyapi){
+      s3fs_oper.chmod   = s3fs_chmod;
+      s3fs_oper.chown   = s3fs_chown;
+      s3fs_oper.utimens = s3fs_utimens;
+    }else{
+      s3fs_oper.chmod   = s3fs_chmod_nocopy;
+      s3fs_oper.chown   = s3fs_chown_nocopy;
+      s3fs_oper.utimens = s3fs_utimens_nocopy;
+    }
+    s3fs_oper.truncate  = s3fs_truncate;
+    s3fs_oper.open      = s3fs_open;
+    s3fs_oper.read      = s3fs_read;
+    s3fs_oper.write     = s3fs_write;
+    s3fs_oper.statfs    = s3fs_statfs;
+    s3fs_oper.flush     = s3fs_flush;
+    s3fs_oper.fsync     = s3fs_fsync;
+    s3fs_oper.release   = s3fs_release;
+    s3fs_oper.opendir   = s3fs_opendir;
+    s3fs_oper.readdir   = s3fs_readdir;
+    s3fs_oper.init      = s3fs_init;
+    s3fs_oper.destroy   = s3fs_destroy;
+    s3fs_oper.access    = s3fs_access;
+    s3fs_oper.create    = s3fs_create;
   }
-  s3fs_oper.read      = ks3fs_read;
-  s3fs_oper.write     = ks3fs_write;
-  s3fs_oper.statfs    = ks3fs_statfs;
-  s3fs_oper.flush     = ks3fs_flush;
-  s3fs_oper.fsync     = ks3fs_fsync;
-  s3fs_oper.release   = ks3fs_release;
-  s3fs_oper.opendir   = ks3fs_opendir;
-  s3fs_oper.readdir   = ks3fs_readdir;
-  s3fs_oper.init      = ks3fs_init;
-  s3fs_oper.destroy   = ks3fs_destroy;
-  s3fs_oper.access    = ks3fs_access;
-  s3fs_oper.create    = ks3fs_create;
   // extended attributes
   if(is_use_xattr){
     s3fs_oper.setxattr    = s3fs_setxattr;
