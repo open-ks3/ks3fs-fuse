@@ -212,6 +212,7 @@ static int ks3fs_truncate(const char* path, off_t size);
 static int ks3fs_create(const char* path, mode_t mode, struct fuse_file_info* fi);
 static int ks3fs_open(const char* path, struct fuse_file_info* fi);
 static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi);
+static int ks3fs_read_use_split_file_size(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi);
 static int ks3fs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi);
 static int ks3fs_statfs(const char* path, struct statvfs* stbuf);
 static int ks3fs_flush(const char* path, struct fuse_file_info* fi);
@@ -2486,7 +2487,6 @@ static int s3fs_open(const char* path, struct fuse_file_info* fi)
   return 0;
 }
 
-
 static int ks3fs_list_part_files(const char *path, s3obj_list_t& objs)
 {
     int result;
@@ -2516,7 +2516,6 @@ static int ks3fs_list_part_files(const char *path, s3obj_list_t& objs)
 
     return result;
 }
-
 
 static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
@@ -2584,6 +2583,34 @@ static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, st
     }
   }
   return static_cast<int>(res);
+}
+
+static int ks3fs_read_use_split_file_size(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
+{
+  int result;
+  char real_path[path_length];
+  off_t real_offset = offset%split_file_size;
+  uint32_t cur_file_no = offset/split_file_size;
+
+  S3FS_PRN_DBG("[path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
+
+  memset(real_path, path_length, 0);
+  snprintf(real_path, path_length, "%s.part%05d", path, cur_file_no);
+
+  FdEntity* ent;
+  if(NULL == (ent = FdManager::get()->GetFdEntity(real_path))){
+    if (0 != (result = s3fs_open(real_path, fi))) {
+      return result;
+    }
+  }
+
+  size_t left_size = (cur_file_no + 1) * split_file_size - offset;
+  if (left_size < size) {
+    // vfs will reread the left
+    return s3fs_read(real_path, buf, left_size, real_offset, fi);
+  } else {
+    return s3fs_read(real_path, buf, size, real_offset, fi);
+  }
 }
 
 static int s3fs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
@@ -5705,6 +5732,11 @@ int main(int argc, char* argv[])
   }
   s3fs_oper.truncate  = ks3fs_truncate;
   s3fs_oper.open      = ks3fs_open;
+  if (read_use_split_file_size) {
+    s3fs_oper.read      = ks3fs_read_use_split_file_size;
+  } else {
+    s3fs_oper.read      = ks3fs_read;
+  }
   s3fs_oper.read      = ks3fs_read;
   s3fs_oper.write     = ks3fs_write;
   s3fs_oper.statfs    = ks3fs_statfs;
