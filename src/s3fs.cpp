@@ -2542,19 +2542,13 @@ static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, st
       return ret;
     }
 
-    //if set read_use_split_file_size true use split_file_size
-    //else get file stat
-    off_t stat_size = split_file_size;
-    if (!read_use_split_file_size) {
-      struct stat current_file_stat;
-      if (0 != s3fs_getattr(current_file_path.c_str(), &current_file_stat)) {
+    struct stat current_file_stat;
+    if (0 != s3fs_getattr(current_file_path.c_str(), &current_file_stat)) {
         S3FS_PRN_ERR("get file (%s) attribute error", path);
         return -EIO;
-      }
-      stat_size = current_file_stat.st_size;
     }
 
-    pile_size += stat_size;
+    pile_size += current_file_stat.st_size;
 
     if (pile_size <= static_cast<size_t>(offset)) {
       continue;
@@ -2562,7 +2556,7 @@ static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, st
 
     bool need_break = false;
     size_t current_file_remain_size = pile_size - offset;
-    size_t current_file_offset = stat_size - current_file_remain_size;
+    size_t current_file_offset = current_file_stat.st_size - current_file_remain_size;
     size_t read_size = current_file_remain_size >= size ? size : current_file_remain_size;
 
     ret = s3fs_read(current_file_path.c_str(), buf + res, read_size, current_file_offset, fi);
