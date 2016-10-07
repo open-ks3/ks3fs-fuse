@@ -191,7 +191,6 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
 
 static string get_real_path(string& path);
 static int list_part_files(const char* path, s3obj_list_t& part_files);
-static int ks3fs_list_part_files(const char *path, s3obj_list_t &objs);
 
 // ks3 fuse interface functions
 static int ks3fs_getattr(const char* path, struct stat* stbuf);
@@ -2486,36 +2485,6 @@ static int s3fs_open(const char* path, struct fuse_file_info* fi)
   S3FS_MALLOCTRIM(0);
 
   return 0;
-}
-
-static int ks3fs_list_part_files(const char *path, s3obj_list_t& objs)
-{
-    int result;
-    S3ObjList objects;
-    s3obj_list_t filter;
-    string name = mybasename(path);
-    string parent = mydirname(path);
-    if(parent == "."){
-        parent = "/";
-    }
-    if (0 != (result = list_bucket(parent.c_str(), objects, NULL))) {
-    	return result;
-    }
-    objects.GetNameList(filter);
-    const regex pattern("^"+name+"\\.part\\d{5}$");
-    s3obj_list_t::iterator iter;
-    for (iter = filter.begin(); iter != filter.end(); iter ++) {
-    	if (regex_match((*iter), pattern)){
-    		objs.push_back((*iter));
-    	}
-    }
-    if (objs.size() > 0) {
-    	objs.sort();
-    }else {
-    	result = -EIO;
-    }
-
-    return result;
 }
 
 static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
