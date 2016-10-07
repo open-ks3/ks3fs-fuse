@@ -2678,23 +2678,24 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
   } else {
     FdEntity* ent;
     if(NULL == (ent = FdManager::get()->GetFdEntity(real_path))){
-      if (0 == cur_file_no) {
-        return -EIO;
-      }
+      if (real_offset == 0 && cur_file_no != 0) {
+        // need split file
+        struct stat st;
+        char first_path[path_length];
+        memset(first_path, path_length, 0);
+        snprintf(first_path, path_length, "%s.part%05d", path, 0);
+        if (0 != (result = s3fs_getattr(first_path, &st))) {
+          return result;
+        }
  
-      // need split file
-      struct stat st;
-      char first_path[path_length];
-      memset(first_path, path_length, 0);
-      snprintf(first_path, path_length, "%s.part%05d", path, 0);
-      if (0 != (result = s3fs_getattr(first_path, &st))) {
-        return result;
-      }
- 
-      if (0 != (result = s3fs_create(real_path, st.st_mode, fi))) {
-        return result;
-      }
-      if (0 != (result = s3fs_open(real_path, fi))) {
+        if (0 != (result = s3fs_create(real_path, st.st_mode, fi))) {
+          return result;
+        }
+        if (0 != (result = s3fs_open(real_path, fi))) {
+          return result;
+        }
+      } else if (0 != (result = s3fs_open(real_path, fi))) {
+        S3FS_PRN_DBG("s3fs_open %s return %d", real_path, result);
         return result;
       }
     }
