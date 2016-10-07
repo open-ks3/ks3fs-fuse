@@ -43,7 +43,6 @@
 #include <map>
 #include <string>
 #include <list>
-#include <regex>
 
 #include "common.h"
 #include "s3fs.h"
