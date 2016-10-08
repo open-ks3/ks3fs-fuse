@@ -1211,7 +1211,7 @@ int FdEntity::NoCacheLoadAndPost(off_t start, size_t size)
   }
 
   // Change entity key in manager mapping
-  FdManager::get()->ChangeEntityToTempPath(this, path.c_str());
+  //FdManager::get()->ChangeEntityToTempPath(this, path.c_str());
 
   // open temporary file
   FILE* ptmpfp;

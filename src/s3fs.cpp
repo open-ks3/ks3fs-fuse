@@ -2638,26 +2638,27 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
       }
     }
   } else {
-    FdEntity* ent;
-    if(NULL == (ent = FdManager::get()->GetFdEntity(real_path))){
-      if (real_offset == 0 && cur_file_no != 0) {
-        // need split file
-        struct stat st;
-        char first_path[path_length];
-        memset(first_path, path_length, 0);
-        snprintf(first_path, path_length, "%s.part%05d", path, 0);
-        if (0 != (result = s3fs_getattr(first_path, &st))) {
+    if (real_offset == 0 && cur_file_no != 0) {
+      // need split file
+      struct stat st;
+      char last_part_file[path_length];
+      memset(last_part_file, path_length, 0);
+      snprintf(last_part_file, path_length, "%s.part%05d", path, cur_file_no - 1);
+      if (0 != (result = s3fs_getattr(last_part_file, &st))) {
+        return result;
+      }
+      FdEntity* ent;
+      if(NULL != (ent = FdManager::get()->GetFdEntity(last_part_file))){
+        fi->fh = ent->GetFd();
+        if (0 != (result = s3fs_flush(last_part_file, fi))) {
           return result;
         }
+      }
  
-        if (0 != (result = s3fs_create(real_path, st.st_mode, fi))) {
-          return result;
-        }
-        if (0 != (result = s3fs_open(real_path, fi))) {
-          return result;
-        }
-      } else if (0 != (result = s3fs_open(real_path, fi))) {
-        S3FS_PRN_DBG("s3fs_open %s return %d", real_path, result);
+      if (0 != (result = s3fs_create(real_path, st.st_mode, fi))) {
+        return result;
+      }
+      if (0 != (result = s3fs_open(real_path, fi))) {
         return result;
       }
     }
@@ -2746,7 +2747,7 @@ static int ks3fs_flush(const char* path, struct fuse_file_info* fi)
         if (0 != (result = s3fs_flush(part_file.c_str(), fi))) {
           return result;
         }
-    }
+      }
   }
   return result;
 }
