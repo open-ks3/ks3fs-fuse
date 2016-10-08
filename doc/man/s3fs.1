@@ -211,6 +211,19 @@ If you set this option, you can use the extended attribute.
 For example, encfs and ecryptfs need to support the extended attribute.
 Notice: if s3fs handles the extended attribute, s3fs can not work to copy command with preserve=mode.
 .TP
+\fB\-o\fR no_split_file (default is split file)
+This option control S3 upload download object not use split file.
+split file because kingsoft S3 implement poor performance file size large than 5 GB.
+Un set this option better performance.
+.TP
+\fB\-o\fR split_file_size (default="4096")
+- split file size, in MB, for control S3 upload download object use split file size. maximum size 5120(5GB).
+.TP
+\fB\-o\fR read_use_split_file_size (default is use split file size)
+This option set fuse fuction <read> implement get file size by s3 or default split_file_size value.
+If you want get file state by s3, you can set this option=false or 0.
+use s3 handles get file state size have poor performance
+.TP
 \fB\-o\fR noxmlns - disable registing xml name space.
 disable registing xml name space for response of ListBucketResult and ListVersionsResult etc. Default name space is looked up from "http://s3.amazonaws.com/doc/2006-03-01".
 This option should not be specified now, because s3fs looks up xmlns automatically after v1.66.
