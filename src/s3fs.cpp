@@ -5464,6 +5464,16 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
       return 0;
     }
 
+    if(0 == STR2NCMP(arg, "split_file_size=")){
+         off_t size = static_cast<size_t>(s3fs_strtoofft(strchr(arg, '=') + sizeof(char))) * 1024 * 1024;
+         if(size > FIVE_GB){
+           S3FS_PRN_EXIT("split_file_size option must be less than 5120(5GB).");
+           return -1;
+         }
+         split_file_size = (size<= 0)?FOUR_GB:size;
+         return 0;
+    }
+
     //
     // debug option for s3fs
     //
