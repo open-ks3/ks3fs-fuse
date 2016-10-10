@@ -2071,6 +2071,7 @@ int S3fsCurl::RequestPerform(void)
 //
 string S3fsCurl::CalcSignatureV2(const string& method, const string& strMD5, const string& content_type, const string& date, const string& resource)
 {
+  S3FS_PRN_DBG("method[%s] strMD5[%s] content_type[%s] data[%s] resource[%s]", method.c_str(), strMD5.c_str(), content_type.c_str(), date.c_str(), resource.c_str());
   string Signature;
   string StringToSign;
 
@@ -2512,6 +2513,11 @@ int S3fsCurl::HeadRequest(const char* tpath, headers_t& meta)
     string key   = lower(iter->first);
     string value = iter->second;
     if(key == "content-type"){
+      string utf8 = "utf-8";
+      size_t pos = value.find(utf8);
+      if (pos != string::npos) {
+        value = value.replace(pos, utf8.length(), "UTF-8");
+      }
       meta[iter->first] = value;
     }else if(key == "content-length"){
       meta[iter->first] = value;
