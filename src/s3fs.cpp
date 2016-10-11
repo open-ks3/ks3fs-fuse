@@ -2626,15 +2626,23 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
       return result;
     }
 
-    s3obj_list_t::const_iterator liter;
-    for(liter = part_files.begin(); liter != part_files.end(); ++liter){
-      string part_file = (*liter);
-      if (0 == strncmp(part_file.c_str(), real_path, part_file.length())) {
-        if (0 != (result = s3fs_open(real_path, fi))) {
-          return result;
-        }
-      } else {
+    struct stat st;
+    if (0 != (result = s3fs_getattr(real_path, &st))) {
+      return result;
+    }
+
+    if (st.st_size > 0) {
+      s3obj_list_t::const_iterator liter;
+      for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+        string part_file = (*liter);
         s3fs_unlink(part_file.c_str());
+      }
+
+      if (0 != (result = s3fs_create(real_path, st.st_mode, fi))) {
+        return result;
+      }
+      if (0 != (result = s3fs_open(real_path, fi))) {
+        return result;
       }
     }
   } else {
