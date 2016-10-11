@@ -1624,7 +1624,7 @@ ssize_t FdEntity::Write(const char* bytes, off_t start, size_t size)
   if(0 == upload_id.length()){
     // check disk space
     size_t restsize = pagelist.GetTotalUnloadedPageSize(0, start) + size;
-    if(FdManager::IsSafeDiskSpace(NULL, restsize)){
+    if(FdManager::IsSafeDiskSpace(NULL, restsize) || start < MIN_MULTIPART_SIZE){
       // enough disk space
 
       // Load unitialized area which starts from 0 to (start + size) before writing.
