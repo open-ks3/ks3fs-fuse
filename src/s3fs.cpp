@@ -2658,6 +2658,9 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
       if (0 != (result = s3fs_create(real_path, st.st_mode, fi))) {
         return result;
       }
+    }
+    // support for append write
+    if(NULL == FdManager::get()->ExistOpen(real_path, static_cast<int>(fi->fh))) {
       if (0 != (result = s3fs_open(real_path, fi))) {
         return result;
       }
