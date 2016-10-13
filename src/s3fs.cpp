@@ -2351,7 +2351,32 @@ static int s3fs_utimens_nocopy(const char* path, const struct timespec ts[2])
 
 static int ks3fs_truncate(const char* path, off_t size)
 {
-  return s3fs_truncate(path, size);
+    int result;
+    S3FS_PRN_INFO("[path=%s][size=%jd]", path, (intmax_t)size);
+
+    s3obj_list_t part_files;
+    if (0 != (result = list_part_files(path, part_files))) {
+        return result;
+    }
+    off_t off_size = 0;
+    bool truncate_flag = false;
+    if (part_files.size() > 1 ) {
+        s3obj_list_t::const_iterator liter;
+        for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+            off_size += split_file_size;
+            if (!truncate_flag && size <= off_size) {
+                result = s3fs_truncate((*liter).c_str(), size-off_size+split_file_size);
+                truncate_flag = true;
+            }else {
+                s3fs_unlink((*liter).c_str());
+            }
+        }
+    }else if (part_files.size() == 1 ) {
+        return s3fs_truncate((*part_files.begin()).c_str(), size);
+    }else {
+        return s3fs_truncate(path, size);
+    }
+    return result;
 }
 
 static int s3fs_truncate(const char* path, off_t size)

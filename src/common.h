@@ -21,6 +21,7 @@
 #ifndef S3FS_COMMON_H_
 #define S3FS_COMMON_H_
 
+#include <unistd.h>
 #include <pthread.h>
 #include <sys/time.h>
 #include "../config.h"
