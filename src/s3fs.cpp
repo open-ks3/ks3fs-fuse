@@ -2357,29 +2357,47 @@ static int ks3fs_truncate(const char* path, off_t size)
 {
     int result;
     S3FS_PRN_INFO("[path=%s][size=%jd]", path, (intmax_t)size);
-
+    char file_path[path_length];
+    off_t file_size = size%split_file_size;
+    uint32_t cur_file_no = size/split_file_size;
+    memset(file_path, path_length, 0);
     s3obj_list_t part_files;
     if (0 != (result = list_part_files(path, part_files))) {
         return result;
     }
-    off_t off_size = 0;
-    bool truncate_flag = false;
-    if (part_files.size() > 1 ) {
-        s3obj_list_t::const_iterator liter;
-        for(liter = part_files.begin(); liter != part_files.end(); ++liter){
-            off_size += split_file_size;
-            if (!truncate_flag && size <= off_size) {
-                result = s3fs_truncate((*liter).c_str(), size-off_size+split_file_size);
-                truncate_flag = true;
-            }else {
-                s3fs_unlink((*liter).c_str());
-            }
-        }
-    }else if (part_files.size() == 1 ) {
-        return s3fs_truncate((*part_files.begin()).c_str(), size);
-    }else {
-        return s3fs_truncate(path, size);
+    int file_count = part_files.size() > cur_file_no+1? part_files.size():cur_file_no+1;
+    for (int i = 0; i < file_count; i++) {
+    	snprintf(file_path, path_length, "%s.part%05d", path, i);
+    	if (i > cur_file_no) {
+    		if (0 != (result = s3fs_unlink(file_path))) {
+    			return result;
+    		}
+    		continue;
+    	}
+    	if (i >= part_files.size()) {
+    	    struct fuse_file_info fi;
+    	    struct stat st;
+    	    if (0 != (result = s3fs_getattr((*part_files.begin()).c_str(), &st))) {
+    	      return result;
+    	    }
+    		if (0 != (result = s3fs_create(file_path, st.st_mode, &fi))) {
+    			return result;
+    		}
+    		if (0 != (result = s3fs_open(file_path, &fi))) {
+    			return result;
+    		}
+    	}
+    	if (i == cur_file_no) {
+    		if (0 != (result = s3fs_truncate(file_path, file_size))) {
+    			return result;
+    		}
+    	}else {
+    		if (0 != (result = s3fs_truncate(file_path, split_file_size))) {
+    			return result;
+    		}
+    	}
     }
+
     return result;
 }
 
