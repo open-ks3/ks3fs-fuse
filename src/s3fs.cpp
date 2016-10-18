@@ -1804,7 +1804,8 @@ static int s3fs_chmod(const char* path, mode_t mode)
     // At first, remove directory old object
     if(IS_RMTYPEDIR(nDirType)){
       S3fsCurl s3fscurl;
-      if(0 != (result = s3fscurl.DeleteRequest(strpath.c_str()))){
+      string old_dir = strpath + "/";
+      if(0 != (result = s3fscurl.DeleteRequest(old_dir.c_str()))){
         return result;
       }
     }
@@ -1903,7 +1904,8 @@ static int s3fs_chmod_nocopy(const char* path, mode_t mode)
     // At first, remove directory old object
     if(IS_RMTYPEDIR(nDirType)){
       S3fsCurl s3fscurl;
-      if(0 != (result = s3fscurl.DeleteRequest(strpath.c_str()))){
+      string old_dir = strpath + "/";
+      if(0 != (result = s3fscurl.DeleteRequest(old_dir.c_str()))){
         return result;
       }
     }
@@ -2018,7 +2020,8 @@ static int s3fs_chown(const char* path, uid_t uid, gid_t gid)
     // At first, remove directory old object
     if(IS_RMTYPEDIR(nDirType)){
       S3fsCurl s3fscurl;
-      if(0 != (result = s3fscurl.DeleteRequest(strpath.c_str()))){
+      string old_dir = strpath + "/";
+      if(0 != (result = s3fscurl.DeleteRequest(old_dir.c_str()))){
         return result;
       }
     }
@@ -2115,7 +2118,8 @@ static int s3fs_chown_nocopy(const char* path, uid_t uid, gid_t gid)
     // At first, remove directory old object
     if(IS_RMTYPEDIR(nDirType)){
       S3fsCurl s3fscurl;
-      if(0 != (result = s3fscurl.DeleteRequest(strpath.c_str()))){
+      string old_dir = strpath + "/";
+      if(0 != (result = s3fscurl.DeleteRequest(old_dir.c_str()))){
         return result;
       }
     }
