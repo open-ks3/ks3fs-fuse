@@ -872,7 +872,7 @@ static int list_part_files(const char* path, s3obj_list_t& part_files)
     return 0;
   }
 
-  if (0 != (result = list_bucket(mydirname(path).c_str(), head, NULL))){
+  if (0 != (result = list_bucket(path, head, "/"))){
     S3FS_PRN_ERR("list_bucket returns error(%d).", result);
     return result;
   }
@@ -3024,7 +3024,6 @@ static S3fsCurl* multi_head_retry_callback(S3fsCurl* s3fscurl)
 
 static int readdir_multi_head(const char* path, S3ObjList& head, void* buf, fuse_fill_dir_t filler)
 {
-  S3fsMultiCurl curlmulti;
   s3obj_list_t  headlist;
   s3obj_list_t  fillerlist;
   int           result = 0;
@@ -3036,12 +3035,13 @@ static int readdir_multi_head(const char* path, S3ObjList& head, void* buf, fuse
   // Make base path list.
   head.GetNameList(headlist, true, false);  // get name with "/".
 
-  // Initialize S3fsMultiCurl
-  curlmulti.SetSuccessCallback(multi_head_callback);
-  curlmulti.SetRetryCallback(multi_head_retry_callback);
-
   // Loop
   while(!headlist.empty()){
+    S3fsMultiCurl curlmulti;
+    // Initialize S3fsMultiCurl
+    curlmulti.SetSuccessCallback(multi_head_callback);
+    curlmulti.SetRetryCallback(multi_head_retry_callback);
+
     s3obj_list_t::iterator iter;
     long                   cnt;
 
