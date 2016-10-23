@@ -872,7 +872,7 @@ static int list_part_files(const char* path, s3obj_list_t& part_files)
     return 0;
   }
 
-  if (0 != (result = list_bucket(path, head, "/"))){
+  if (0 != (result = list_bucket(mydirname(path).c_str(), head, "/"))){
     S3FS_PRN_ERR("list_bucket returns error(%d).", result);
     return result;
   }
@@ -914,6 +914,10 @@ static int ks3fs_getattr(const char* path, struct stat* stbuf)
   time_t atime = 0;
   time_t mtime = 0;
   time_t ctime = 0;
+
+  if (0 == strcmp(path, "/")) {
+    return s3fs_getattr(path, stbuf);
+  }
 
   s3obj_list_t part_files;
   if (0 != (result = list_part_files(path, part_files))) {
