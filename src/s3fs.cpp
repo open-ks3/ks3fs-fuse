@@ -154,7 +154,8 @@ static int list_bucket(const char* path, S3ObjList& head, const char* delimiter,
 static int directory_empty(const char* path);
 static bool is_truncated(xmlDocPtr doc);
 static int append_objects_from_xml_ex(const char* path, xmlDocPtr doc, xmlXPathContextPtr ctx, 
-              const char* ex_contents, const char* ex_key, const char* ex_etag, int isCPrefix, S3ObjList& head);
+              const char* ex_contents, const char* ex_key, const char* ex_etag, const char* ex_size,
+              const char* ex_mtime, int isCPrefix, S3ObjList& head);
 static int append_objects_from_xml(const char* path, xmlDocPtr doc, S3ObjList& head);
 static bool GetXmlNsUrl(xmlDocPtr doc, string& nsurl);
 static xmlChar* get_base_exp(xmlDocPtr doc, const char* exp);
@@ -189,7 +190,7 @@ static int set_bucket(const char* arg);
 static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_args* outargs);
 
 static string get_real_path(string& path);
-static int list_part_files(const char* path, s3obj_list_t& part_files);
+static int list_part_files(const char* path, s3obj_list_t& part_files, off_t* file_size = NULL);
 
 // ks3 fuse interface functions
 static int ks3fs_getattr(const char* path, struct stat* stbuf);
@@ -855,7 +856,7 @@ static string get_real_path(string& path)
   }
 }
 
-static int list_part_files(const char* path, s3obj_list_t& part_files)
+static int list_part_files(const char* path, s3obj_list_t& part_files, off_t* file_size)
 {
   int result;
   S3ObjList head;
@@ -877,13 +878,16 @@ static int list_part_files(const char* path, s3obj_list_t& part_files)
     return result;
   }
 
-  s3obj_list_t headlist;
+  off_t size = 0;
   string file = mybasename(path);
-  head.GetNameList(headlist, true, false);  // get name with "/".
+  s3obj_t objects;
+  s3obj_t::const_iterator iter;
+  head.GetObjects(&objects);
 
-  s3obj_list_t::const_iterator liter;
-  for(liter = headlist.begin(); liter != headlist.end(); ++liter){
-    string part_file = (*liter);
+  for(iter = objects.begin(); objects.end() != iter; ++iter){
+    string part_file = (*iter).first;
+    string strsize = (*iter).second.size;
+    string strmtime = (*iter).second.mtime;
     if (part_file.length() > postfix_length && file == get_real_path(part_file)) {
       if (mydirname(path) == "/") {
         part_file = mydirname(path) + part_file;
@@ -891,13 +895,16 @@ static int list_part_files(const char* path, s3obj_list_t& part_files)
         part_file = mydirname(path) + "/" + part_file;
       }
       part_files.push_back(part_file);
+      size += atol(strsize.c_str());
     }
   }
-  
   if (part_files.size() > 0) {
     part_files.sort();
   }
-  S3FS_PRN_INFO1("[path=%s][list=%zu]", path, part_files.size());
+  if (file_size) {
+    *file_size = size;
+  }
+  S3FS_PRN_INFO1("[path=%s][list=%zu][size=%ld]", path, part_files.size(), size);
 
   return 0;
 }
@@ -909,18 +916,14 @@ static int ks3fs_getattr(const char* path, struct stat* stbuf)
   S3FS_PRN_INFO("[path=%s]", path);
 
   struct stat st;
-  off_t st_size = 0;
-  blkcnt_t st_blocks = 0;
-  time_t atime = 0;
-  time_t mtime = 0;
-  time_t ctime = 0;
+  off_t file_size = 0;
 
   if (0 == strcmp(path, "/")) {
     return s3fs_getattr(path, stbuf);
   }
 
   s3obj_list_t part_files;
-  if (0 != (result = list_part_files(path, part_files))) {
+  if (0 != (result = list_part_files(path, part_files, &file_size))) {
     return result;
   }
 
@@ -928,33 +931,14 @@ static int ks3fs_getattr(const char* path, struct stat* stbuf)
   if (part_files.size() == 0) {
     return s3fs_getattr(path, stbuf);
   }
-
-  s3obj_list_t::const_iterator liter;
-  for(liter = part_files.begin(); liter != part_files.end(); ++liter){
-    string part_file = (*liter);
-    if (0 != (result = s3fs_getattr(part_file.c_str(), &st))) {
-      return result;
-    }
-    st_size += st.st_size;
-    st_blocks += st.st_blocks;
-    if (atime < st.st_atime) {
-      atime = st.st_atime;
-    }
-    if (mtime < st.st_mtime) {
-      mtime = st.st_mtime;
-    }
-    if (ctime < st.st_ctime) {
-      ctime = st.st_ctime;
-    }
+  s3obj_list_t::reverse_iterator liter = part_files.rbegin();
+  if (0 != (result = s3fs_getattr((*liter).c_str(), &st))) {
+    return result;
   }
-
   if (stbuf) {
     *stbuf = st;
-    stbuf->st_size = st_size;
-    stbuf->st_blocks = st_blocks;
-    stbuf->st_atime = atime;
-    stbuf->st_mtime = mtime;
-    stbuf->st_ctime = ctime;
+    stbuf->st_size = file_size;
+    stbuf->st_blocks = 0;
   }
   S3FS_PRN_DBG("[path=%s] uid=%u, gid=%u, mode=%04o", path, (unsigned int)(stbuf->st_uid), (unsigned int)(stbuf->st_gid), stbuf->st_mode);
 
@@ -3304,7 +3288,8 @@ static int list_bucket(const char* path, S3ObjList& head, const char* delimiter,
 static const char* c_strErrorObjectName = "FILE or SUBDIR in DIR";
 
 static int append_objects_from_xml_ex(const char* path, xmlDocPtr doc, xmlXPathContextPtr ctx, 
-       const char* ex_contents, const char* ex_key, const char* ex_etag, int isCPrefix, S3ObjList& head)
+       const char* ex_contents, const char* ex_key, const char* ex_etag, const char* ex_size,
+       const char* ex_mtime, int isCPrefix, S3ObjList& head)
 {
   xmlXPathObjectPtr contents_xp;
   xmlNodeSetPtr content_nodes;
@@ -3322,6 +3307,8 @@ static int append_objects_from_xml_ex(const char* path, xmlDocPtr doc, xmlXPathC
 
   bool   is_dir;
   string stretag;
+  string strsize;
+  string strmtime;
   int    i;
   for(i = 0; i < content_nodes->nodeNr; i++){
     ctx->node = content_nodes->nodeTab[i];
@@ -3346,6 +3333,8 @@ static int append_objects_from_xml_ex(const char* path, xmlDocPtr doc, xmlXPathC
     }else if((const char*)name != c_strErrorObjectName){
       is_dir  = isCPrefix ? true : false;
       stretag = "";
+      strsize = "";
+      strmtime = "";
 
       if(!isCPrefix && ex_etag){
         // Get ETag
@@ -3364,7 +3353,43 @@ static int append_objects_from_xml_ex(const char* path, xmlDocPtr doc, xmlXPathC
           xmlXPathFreeObject(ETag);
         }
       }
-      if(!head.insert(name, (0 < stretag.length() ? stretag.c_str() : NULL), is_dir)){
+      if(!isCPrefix && ex_size){
+        // Get Size
+        xmlXPathObjectPtr Size;
+        if(NULL != (Size = xmlXPathEvalExpression((xmlChar*)ex_size, ctx))){
+          if(xmlXPathNodeSetIsEmpty(Size->nodesetval)){
+            S3FS_PRN_INFO("Size->nodesetval is empty.");
+          }else{
+            xmlNodeSetPtr etag_nodes = Size->nodesetval;
+            xmlChar* petag = xmlNodeListGetString(doc, etag_nodes->nodeTab[0]->xmlChildrenNode, 1);
+            if(petag){
+              strsize = (char*)petag;
+              xmlFree(petag);
+            }
+          }
+          xmlXPathFreeObject(Size);
+        }
+      }
+      if(!isCPrefix && ex_mtime){
+        // Get LastModified time
+        xmlXPathObjectPtr mtime;
+        if(NULL != (mtime = xmlXPathEvalExpression((xmlChar*)ex_mtime, ctx))){
+          if(xmlXPathNodeSetIsEmpty(mtime->nodesetval)){
+            S3FS_PRN_INFO("mtime->nodesetval is empty.");
+          }else{
+            xmlNodeSetPtr etag_nodes = mtime->nodesetval;
+            xmlChar* petag = xmlNodeListGetString(doc, etag_nodes->nodeTab[0]->xmlChildrenNode, 1);
+            if(petag){
+              strmtime = (char*)petag;
+              xmlFree(petag);
+            }
+          }
+          xmlXPathFreeObject(mtime);
+        }
+      }
+      if(!head.insert(name, (0 < stretag.length() ? stretag.c_str() : NULL),
+                            (0 < strsize.length() ? strsize.c_str() : NULL),
+                            (0 < strmtime.length() ? strmtime.c_str() : NULL), is_dir)){
         S3FS_PRN_ERR("insert_object returns with error.");
         xmlXPathFreeObject(key);
         xmlXPathFreeObject(contents_xp);
@@ -3422,6 +3447,8 @@ static int append_objects_from_xml(const char* path, xmlDocPtr doc, S3ObjList& h
   string ex_cprefix  = "//";
   string ex_prefix   = "";
   string ex_etag     = "";
+  string ex_size     = "";
+  string ex_mtime    = "";
 
   if(!doc){
     return -1;
@@ -3443,15 +3470,19 @@ static int append_objects_from_xml(const char* path, xmlDocPtr doc, S3ObjList& h
     ex_cprefix += "s3:";
     ex_prefix  += "s3:";
     ex_etag    += "s3:";
+    ex_size    += "s3:";
+    ex_mtime   += "s3:";
   }
   ex_contents+= "Contents";
   ex_key     += "Key";
   ex_cprefix += "CommonPrefixes";
   ex_prefix  += "Prefix";
   ex_etag    += "ETag";
+  ex_size    += "Size";
+  ex_mtime   += "LastModified";
 
-  if(-1 == append_objects_from_xml_ex(prefix.c_str(), doc, ctx, ex_contents.c_str(), ex_key.c_str(), ex_etag.c_str(), 0, head) ||
-     -1 == append_objects_from_xml_ex(prefix.c_str(), doc, ctx, ex_cprefix.c_str(), ex_prefix.c_str(), NULL, 1, head) )
+  if(-1 == append_objects_from_xml_ex(prefix.c_str(), doc, ctx, ex_contents.c_str(), ex_key.c_str(), ex_etag.c_str(), ex_size.c_str(), ex_mtime.c_str(), 0, head) ||
+     -1 == append_objects_from_xml_ex(prefix.c_str(), doc, ctx, ex_cprefix.c_str(), ex_prefix.c_str(), NULL, NULL, NULL, 1, head) )
   {
     S3FS_PRN_ERR("append_objects_from_xml_ex returns with error.");
     S3FS_XMLXPATHFREECONTEXT(ctx);

@@ -84,7 +84,7 @@ inline headers_t::const_iterator find_content_type(headers_t& meta)
 // If name is terminated by "_$folder$", it is forced dir type.
 // If is_dir is true and name is not terminated by "/", the name is added "/".
 //
-bool S3ObjList::insert(const char* name, const char* etag, bool is_dir)
+bool S3ObjList::insert(const char* name, const char* etag, const char* size, const char* mtime, bool is_dir)
 {
   if(!name || '\0' == name[0]){
     return false;
@@ -137,6 +137,12 @@ bool S3ObjList::insert(const char* name, const char* etag, bool is_dir)
     if(etag){
       (*iter).second.etag = string(etag);  // over write
     }
+    if(size){
+      (*iter).second.size = string(size);  // over write
+    }
+    if(mtime){
+      (*iter).second.mtime = string(mtime);  // over write
+    }
   }else{
     // add new object
     s3obj_entry newobject;
@@ -144,6 +150,12 @@ bool S3ObjList::insert(const char* name, const char* etag, bool is_dir)
     newobject.is_dir  = is_dir;
     if(etag){
       newobject.etag = etag;
+    }
+    if(size){
+      newobject.size = size;
+    }
+    if(mtime){
+      newobject.mtime = mtime;
     }
     objects[newname] = newobject;
   }
@@ -166,6 +178,8 @@ bool S3ObjList::insert_nomalized(const char* name, const char* normalized, bool 
     // found name --> over write
     (*iter).second.orgname.erase();
     (*iter).second.etag.erase();
+    (*iter).second.size.erase();
+    (*iter).second.mtime.erase();
     (*iter).second.normalname = normalized;
     (*iter).second.is_dir     = is_dir;
   }else{
@@ -233,6 +247,32 @@ string S3ObjList::GetETag(const char* name) const
   return ps3obj->etag;
 }
 
+string S3ObjList::GetSize(const char* name) const
+{
+  const s3obj_entry* ps3obj;
+
+  if(!name || '\0' == name[0]){
+    return string("");
+  }
+  if(NULL == (ps3obj = GetS3Obj(name))){
+    return string("");
+  }
+  return ps3obj->size;
+}
+
+string S3ObjList::GetMTime(const char* name) const
+{
+  const s3obj_entry* ps3obj;
+
+  if(!name || '\0' == name[0]){
+    return string("");
+  }
+  if(NULL == (ps3obj = GetS3Obj(name))){
+    return string("");
+  }
+  return ps3obj->mtime;
+}
+
 bool S3ObjList::IsDir(const char* name) const
 {
   const s3obj_entry* ps3obj;
@@ -279,6 +319,19 @@ bool S3ObjList::GetNameList(s3obj_list_t& list, bool OnlyNormalized, bool CutSla
     list.push_back(name);
   }
   return true;
+}
+
+void S3ObjList::Display() const {
+  s3obj_t::const_iterator iter;
+
+  for(iter = objects.begin(); objects.end() != iter; ++iter){
+    string name = (*iter).first;
+    S3FS_PRN_INFO("[file = %s, size = %s, mtime = %s]", name.c_str(), (*iter).second.size.c_str(), (*iter).second.mtime.c_str());
+  }
+}
+
+void S3ObjList::GetObjects(s3obj_t* objs) const {
+  *objs = objects;
 }
 
 typedef std::map<std::string, bool> s3obj_h_t;

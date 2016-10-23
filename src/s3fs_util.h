@@ -30,6 +30,8 @@ struct s3obj_entry{
   std::string normalname; // normalized name: if empty, object is nomalized name.
   std::string orgname;    // original name: if empty, object is original name.
   std::string etag;
+  std::string size;
+  std::string mtime;
   bool        is_dir;
 
   s3obj_entry() : is_dir(false) {}
@@ -64,13 +66,18 @@ class S3ObjList
     bool IsEmpty(void) const {
       return objects.empty();
     }
-    bool insert(const char* name, const char* etag = NULL, bool is_dir = false);
+    bool insert(const char* name, const char* etag = NULL, const char* size = NULL,
+                const char* mtime = NULL, bool is_dir = false);
     std::string GetOrgName(const char* name) const;
     std::string GetNormalizedName(const char* name) const;
     std::string GetETag(const char* name) const;
+    std::string GetSize(const char* name) const;
+    std::string GetMTime(const char* name) const;
     bool IsDir(const char* name) const;
     bool GetNameList(s3obj_list_t& list, bool OnlyNormalized = true, bool CutSlash = true) const;
     bool GetLastName(std::string& lastname) const;
+    void Display() const;
+    void GetObjects(s3obj_t* objs) const;
 
     static bool MakeHierarchizedList(s3obj_list_t& list, bool haveSlash);
 };
