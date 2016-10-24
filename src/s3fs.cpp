@@ -150,7 +150,7 @@ static FdEntity* get_local_fent(const char* path, bool is_load = false);
 static bool multi_head_callback(S3fsCurl* s3fscurl);
 static S3fsCurl* multi_head_retry_callback(S3fsCurl* s3fscurl);
 static int readdir_multi_head(const char* path, S3ObjList& head, void* buf, fuse_fill_dir_t filler);
-static int list_bucket(const char* path, S3ObjList& head, const char* delimiter, bool check_content_only = false);
+static int list_bucket(const char* path, S3ObjList& head, const char* delimiter, bool check_content_only = false, const char* prefix = NULL);
 static int directory_empty(const char* path);
 static bool is_truncated(xmlDocPtr doc);
 static int append_objects_from_xml_ex(const char* path, xmlDocPtr doc, xmlXPathContextPtr ctx, 
@@ -873,7 +873,7 @@ static int list_part_files(const char* path, s3obj_list_t& part_files, off_t* fi
     return 0;
   }
 
-  if (0 != (result = list_bucket(mydirname(path).c_str(), head, "/"))){
+  if (0 != (result = list_bucket(mydirname(path).c_str(), head, "/", false, mybasename(path).c_str()))){
     S3FS_PRN_ERR("list_bucket returns error(%d).", result);
     return result;
   }
@@ -888,7 +888,7 @@ static int list_part_files(const char* path, s3obj_list_t& part_files, off_t* fi
     string part_file = (*iter).first;
     string strsize = (*iter).second.size;
     string strmtime = (*iter).second.mtime;
-    if (part_file.length() > postfix_length && file == get_real_path(part_file)) {
+    if (part_file.length() == file.length() + postfix_length && file == get_real_path(part_file)) {
       if (mydirname(path) == "/") {
         part_file = mydirname(path) + part_file;
       } else {
@@ -3187,7 +3187,7 @@ static int s3fs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off
   return result;
 }
 
-static int list_bucket(const char* path, S3ObjList& head, const char* delimiter, bool check_content_only)
+static int list_bucket(const char* path, S3ObjList& head, const char* delimiter, bool check_content_only, const char* prefix)
 {
   int       result; 
   string    s3_realpath;
@@ -3215,6 +3215,9 @@ static int list_bucket(const char* path, S3ObjList& head, const char* delimiter,
     query_prefix += urlEncode(s3_realpath.substr(1) + "/");
   }else{
     query_prefix += urlEncode(s3_realpath.substr(1));
+  }
+  if (prefix != NULL) {
+    query_prefix += string(prefix);
   }
   if (check_content_only){
     // Just need to know if there are child objects in dir
@@ -3605,7 +3608,8 @@ static char* get_object_name(xmlDocPtr doc, xmlNodePtr node, const char* path)
       if(basepath && 0 == strcmp(dirpath, basepath)){
         // OK
         return strdup(mybname);
-      }else if(basepath && 0 < strlen(basepath) && '/' == basepath[strlen(basepath) - 1] && 0 == strncmp(dirpath, basepath, strlen(basepath) - 1)){
+//      }else if(basepath && 0 < strlen(basepath) && '/' == basepath[strlen(basepath) - 1] && 0 == strncmp(dirpath, basepath, strlen(basepath) - 1)){
+        } else {
         string withdirname = "";
         if(strlen(dirpath) > strlen(basepath)){
           withdirname = &dirpath[strlen(basepath)];
