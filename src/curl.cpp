@@ -231,14 +231,15 @@ bool CurlHandlerPool::Init()
     return false;
   }
 
-  mHandlers = new CURL*[mMaxHandlers](); // this will init the array to 0
-  for (int i = 0; i < mMaxHandlers; ++i, ++mIndex) {
-    mHandlers[i] = curl_easy_init();
-    if (!mHandlers[i]) {
+  for (int i = 0; i < mMaxHandlers; ++i) {
+    CURL* h = curl_easy_init();
+    if (!h) {
       S3FS_PRN_ERR("Init curl handlers pool failed");
       Destroy();
       return false;
     }
+    mHandlers.push_back(h);
+    S3FS_PRN_DBG("CurlHandlerPool[%zd] = %p", mHandlers.size(), h);
   }
 
   return true;
@@ -246,12 +247,9 @@ bool CurlHandlerPool::Init()
 
 bool CurlHandlerPool::Destroy()
 {
-  assert(mIndex >= -1 && mIndex < mMaxHandlers);
-
-  for (int i = 0; i <= mIndex; ++i) {
-    curl_easy_cleanup(mHandlers[i]);
+  for (std::list<CURL*>::iterator it=mHandlers.begin(); it != mHandlers.end(); ++it) {
+    curl_easy_cleanup(*it);
   }
-  delete[] mHandlers;
 
   if (0 != pthread_mutex_destroy(&mLock)) {
     S3FS_PRN_ERR("Destroy curl handlers lock failed");
@@ -265,41 +263,26 @@ CURL* CurlHandlerPool::GetHandler()
 {
   CURL* h = NULL;
 
-  assert(mIndex >= -1 && mIndex < mMaxHandlers);
-
   pthread_mutex_lock(&mLock);
-  if (mIndex >= 0) {
-    S3FS_PRN_DBG("Get handler from pool: %d", mIndex);
-    h = mHandlers[mIndex--];
+  if (!mHandlers.empty()) {
+    h = mHandlers.front();
+    mHandlers.pop_front();
+    S3FS_PRN_DBG("Get handler from pool: %p", h);
+  } else {
+    h = curl_easy_init();
+    S3FS_PRN_INFO("Pool empty: create new handler : %p", h);
   }
   pthread_mutex_unlock(&mLock);
-
-  if (!h) {
-    S3FS_PRN_INFO("Pool empty: create new handler");
-    h = curl_easy_init();
-  }
 
   return h;
 }
 
 void CurlHandlerPool::ReturnHandler(CURL* h)
 {
-  bool needCleanup = true;
-
-  assert(mIndex >= -1 && mIndex < mMaxHandlers);
-
   pthread_mutex_lock(&mLock);
-  if (mIndex < mMaxHandlers - 1) {
-    mHandlers[++mIndex] = h;
-    needCleanup = false;
-    S3FS_PRN_DBG("Return handler to pool: %d", mIndex);
-  }
+  mHandlers.push_back(h);
+  S3FS_PRN_DBG("Return handler to pool[%zd]: %p", mHandlers.size(), h);
   pthread_mutex_unlock(&mLock);
-
-  if (needCleanup) {
-    S3FS_PRN_INFO("Pool full: destroy the handler");
-    curl_easy_cleanup(h);
-  }
 }
 
 //-------------------------------------------------------------------

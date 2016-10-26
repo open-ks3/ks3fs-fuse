@@ -132,8 +132,6 @@ class CurlHandlerPool
 public:
   CurlHandlerPool(int maxHandlers)
     : mMaxHandlers(maxHandlers)
-    , mHandlers(NULL)
-    , mIndex(-1)
   {
     assert(maxHandlers > 0);
   }
@@ -148,8 +146,7 @@ private:
   int mMaxHandlers;
 
   pthread_mutex_t mLock;
-  CURL** mHandlers;
-  int mIndex;
+  std::list<CURL*> mHandlers;
 };
 
 //----------------------------------------------
