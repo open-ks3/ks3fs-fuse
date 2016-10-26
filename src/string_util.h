@@ -30,6 +30,8 @@
 #include <string>
 #include <sstream>
 
+#include <stdarg.h>
+
 #define SPACES                " \t\r\n"
 #define STR2NCMP(str1, str2)  strncmp(str1, str2, strlen(str2))
 
@@ -58,6 +60,28 @@ bool get_keyword_value(std::string& target, const char* keyword, std::string& va
 std::string s3fs_hex(const unsigned char* input, size_t length);
 char* s3fs_base64(const unsigned char* input, size_t length);
 unsigned char* s3fs_decode64(const char* input, size_t* plength);
+
+// Convert |format| and associated arguments to std::string
+std::string StringPrintf(const char* format, ...)
+    __attribute__ ((format (printf, 1, 2)));
+
+// Write |format| and associated arguments into |output|
+// Returns 0 on success, -1 otherwise.
+int StringPrintf(std::string* output, const char* fmt, ...)
+    __attribute__ ((format (printf, 2, 3)));
+
+// Write |format| and associated arguments in form of va_list into |output|.
+// Returns 0 on success, -1 otherwise.
+int StringVprintf(std::string* output, const char* format, va_list args);
+
+// Append |format| and associated arguments to |output|
+// Returns 0 on success, -1 otherwise.
+int StringAppendf(std::string* output, const char* format, ...)
+    __attribute__ ((format (printf, 2, 3)));
+
+// Append |format| and associated arguments in form of va_list to |output|.
+// Returns 0 on success, -1 otherwise.
+int StringVappendf(std::string* output, const char* format, va_list args);
 
 #endif // S3FS_STRING_UTIL_H_
 

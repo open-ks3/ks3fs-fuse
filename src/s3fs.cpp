@@ -126,7 +126,6 @@ static int64_t singlepart_copy_limit = FIVE_GB;
 static bool is_specified_endpoint = false;
 static int s3fs_init_deferred_exit_status = 0;
 
-static const size_t path_length   = 1024;
 static size_t postfix_length      = 10;
 static bool no_split_file         = false;
 static uint64_t split_file_size   = FOUR_GB;
@@ -1116,9 +1115,7 @@ static int s3fs_mknod(const char *path, mode_t mode, dev_t rdev)
 static int ks3fs_create(const char* path, mode_t mode, struct fuse_file_info* fi)
 {
   // must be first part file
-  char real_path[path_length];
-  snprintf(real_path, path_length, "%s.part00000", path);
-  return s3fs_create(real_path, mode, fi);
+  return s3fs_create(StringPrintf("%s.part00000", path).c_str(), mode, fi);
 }
 
 static int s3fs_create(const char* path, mode_t mode, struct fuse_file_info* fi)
@@ -2347,50 +2344,48 @@ static int s3fs_utimens_nocopy(const char* path, const struct timespec ts[2])
 
 static int ks3fs_truncate(const char* path, off_t size)
 {
-    int result;
-    S3FS_PRN_INFO("[path=%s][size=%jd]", path, (intmax_t)size);
-    char file_path[path_length];
-    off_t file_size = size%split_file_size;
-    uint32_t cur_file_no = size/split_file_size;
-    memset(file_path, path_length, 0);
-    s3obj_list_t part_files;
-    if (0 != (result = list_part_files(path, part_files))) {
-        return result;
-    }
-    int file_count = part_files.size() > cur_file_no+1? part_files.size():cur_file_no+1;
-    for (int i = 0; i < file_count; i++) {
-    	snprintf(file_path, path_length, "%s.part%05d", path, i);
-    	if (i > cur_file_no) {
-    		if (0 != (result = s3fs_unlink(file_path))) {
-    			return result;
-    		}
-    		continue;
-    	}
-    	if (i >= part_files.size()) {
-    	    struct fuse_file_info fi;
-    	    struct stat st;
-    	    if (0 != (result = s3fs_getattr((*part_files.begin()).c_str(), &st))) {
-    	      return result;
-    	    }
-    		if (0 != (result = s3fs_create(file_path, st.st_mode, &fi))) {
-    			return result;
-    		}
-    		if (0 != (result = s3fs_open(file_path, &fi))) {
-    			return result;
-    		}
-    	}
-    	if (i == cur_file_no) {
-    		if (0 != (result = s3fs_truncate(file_path, file_size))) {
-    			return result;
-    		}
-    	}else {
-    		if (0 != (result = s3fs_truncate(file_path, split_file_size))) {
-    			return result;
-    		}
-    	}
-    }
-
+  int result;
+  S3FS_PRN_INFO("[path=%s][size=%jd]", path, (intmax_t)size);
+  off_t file_size = size%split_file_size;
+  uint32_t cur_file_no = size/split_file_size;
+  s3obj_list_t part_files;
+  if (0 != (result = list_part_files(path, part_files))) {
     return result;
+  }
+  uint32_t file_count = part_files.size() > cur_file_no+1? part_files.size():cur_file_no+1;
+  for (uint32_t i = 0; i < file_count; i++) {
+    string file_path = StringPrintf("%s.part%05u", path, i);
+    if (i > cur_file_no) {
+      if (0 != (result = s3fs_unlink(file_path.c_str()))) {
+        return result;
+      }
+      continue;
+    }
+    if (i >= part_files.size()) {
+      struct fuse_file_info fi;
+      struct stat st;
+      if (0 != (result = s3fs_getattr((*part_files.begin()).c_str(), &st))) {
+        return result;
+      }
+      if (0 != (result = s3fs_create(file_path.c_str(), st.st_mode, &fi))) {
+        return result;
+      }
+      if (0 != (result = s3fs_open(file_path.c_str(), &fi))) {
+        return result;
+      }
+    }
+    if (i == cur_file_no) {
+      if (0 != (result = s3fs_truncate(file_path.c_str(), file_size))) {
+        return result;
+      }
+    }else {
+      if (0 != (result = s3fs_truncate(file_path.c_str(), split_file_size))) {
+        return result;
+      }
+    }
+  }
+
+  return result;
 }
 
 static int s3fs_truncate(const char* path, off_t size)
@@ -2460,9 +2455,7 @@ static int s3fs_truncate(const char* path, off_t size)
 
 static int ks3fs_open(const char* path, struct fuse_file_info* fi)
 {
-  char real_path[path_length];
-  snprintf(real_path, path_length, "%s.part00000", path);
-  return s3fs_open(path, fi);
+  return s3fs_open(StringPrintf("%s.part00000", path).c_str(), fi);
 }
 
 static int s3fs_open(const char* path, struct fuse_file_info* fi)
@@ -2590,18 +2583,16 @@ static int ks3fs_read(const char* path, char* buf, size_t size, off_t offset, st
 static int ks3fs_read_use_split_file_size(const char* path, char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
   int result;
-  char real_path[path_length];
   off_t real_offset = offset%split_file_size;
   uint32_t cur_file_no = offset/split_file_size;
+  string real_path = StringPrintf("%s.part%05d", path, cur_file_no);
 
   S3FS_PRN_DBG("[path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
 
-  memset(real_path, path_length, 0);
-  snprintf(real_path, path_length, "%s.part%05d", path, cur_file_no);
 
   FdEntity* ent;
-  if(NULL == (ent = FdManager::get()->GetFdEntity(real_path))){
-    if (0 != (result = s3fs_open(real_path, fi))) {
+  if(NULL == (ent = FdManager::get()->GetFdEntity(real_path.c_str()))){
+    if (0 != (result = s3fs_open(real_path.c_str(), fi))) {
       return result;
     }
   }
@@ -2609,9 +2600,9 @@ static int ks3fs_read_use_split_file_size(const char* path, char* buf, size_t si
   size_t left_size = (cur_file_no + 1) * split_file_size - offset;
   if (left_size < size) {
     // vfs will reread the left
-    return s3fs_read(real_path, buf, left_size, real_offset, fi);
+    return s3fs_read(real_path.c_str(), buf, left_size, real_offset, fi);
   } else {
-    return s3fs_read(real_path, buf, size, real_offset, fi);
+    return s3fs_read(real_path.c_str(), buf, size, real_offset, fi);
   }
 }
 
@@ -2649,14 +2640,11 @@ static int s3fs_read(const char* path, char* buf, size_t size, off_t offset, str
 static int ks3fs_write(const char* path, const char* buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
   int result;
-  char real_path[path_length];
   off_t real_offset = offset%split_file_size;
   uint32_t cur_file_no = offset/split_file_size;
+  string real_path = StringPrintf("%s.part%05d", path, cur_file_no);
 
   S3FS_PRN_DBG("[path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
-
-  memset(real_path, path_length, 0);
-  snprintf(real_path, path_length, "%s.part%05d", path, cur_file_no);
 
   if (offset == 0) {
     // for rewrite same file
@@ -2666,7 +2654,7 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
     }
 
     struct stat st;
-    if (0 != (result = s3fs_getattr(real_path, &st))) {
+    if (0 != (result = s3fs_getattr(real_path.c_str(), &st))) {
       return result;
     }
 
@@ -2677,10 +2665,10 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
         s3fs_unlink(part_file.c_str());
       }
 
-      if (0 != (result = s3fs_create(real_path, st.st_mode, fi))) {
+      if (0 != (result = s3fs_create(real_path.c_str(), st.st_mode, fi))) {
         return result;
       }
-      if (0 != (result = s3fs_open(real_path, fi))) {
+      if (0 != (result = s3fs_open(real_path.c_str(), fi))) {
         return result;
       }
     }
@@ -2688,27 +2676,25 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
     if (real_offset == 0 && cur_file_no != 0) {
       // need split file
       struct stat st;
-      char last_part_file[path_length];
-      memset(last_part_file, path_length, 0);
-      snprintf(last_part_file, path_length, "%s.part%05d", path, cur_file_no - 1);
-      if (0 != (result = s3fs_getattr(last_part_file, &st))) {
+      string last_part_file = StringPrintf("%s.part%05d", path, cur_file_no - 1);
+      if (0 != (result = s3fs_getattr(last_part_file.c_str(), &st))) {
         return result;
       }
       FdEntity* ent;
-      if(NULL != (ent = FdManager::get()->GetFdEntity(last_part_file))){
+      if(NULL != (ent = FdManager::get()->GetFdEntity(last_part_file.c_str()))){
         fi->fh = ent->GetFd();
-        if (0 != (result = s3fs_flush(last_part_file, fi))) {
+        if (0 != (result = s3fs_flush(last_part_file.c_str(), fi))) {
           return result;
         }
       }
  
-      if (0 != (result = s3fs_create(real_path, st.st_mode, fi))) {
+      if (0 != (result = s3fs_create(real_path.c_str(), st.st_mode, fi))) {
         return result;
       }
     }
     // support for append write
-    if(NULL == FdManager::get()->ExistOpen(real_path, static_cast<int>(fi->fh))) {
-      if (0 != (result = s3fs_open(real_path, fi))) {
+    if(NULL == FdManager::get()->ExistOpen(real_path.c_str(), static_cast<int>(fi->fh))) {
+      if (0 != (result = s3fs_open(real_path.c_str(), fi))) {
         return result;
       }
     }
@@ -2717,9 +2703,9 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
   size_t left_size = (cur_file_no + 1) * split_file_size - offset;
   if (left_size < size) {
     // vfs will rewrite the left
-    return s3fs_write(real_path, buf, left_size, real_offset, fi);
+    return s3fs_write(real_path.c_str(), buf, left_size, real_offset, fi);
   } else {
-    return s3fs_write(real_path, buf, size, real_offset, fi);
+    return s3fs_write(real_path.c_str(), buf, size, real_offset, fi);
   }
 }
 
