@@ -3090,16 +3090,13 @@ static int readdir_multi_head(const char* path, S3ObjList& head, void* buf, fuse
     if (!no_split_file) {
       for(iter = fillerlist.begin(); fillerlist.end() != iter; ++iter){
         struct stat st;
-        string path = (*iter);
-        string bpath = mybasename((*iter));
-        if(0 != (result = s3fs_getattr(path.c_str(), &st))) {
-          return result;
-        }
-        if (S_ISREG(st.st_mode)) {
-          bpath = get_real_path(bpath);
-        }
+        string rpath = (*iter);
+        string bpath = mybasename(rpath);
 
-        if(StatCache::getStatCacheData()->GetStat((*iter), &st)){
+        if(StatCache::getStatCacheData()->GetStat(rpath, &st)){
+          if (S_ISREG(st.st_mode)) {
+            bpath = get_real_path(bpath);
+          }
           if (file_info.end() == file_info.find(bpath)) {
             file_info[bpath] = st;
           } else {
