@@ -70,7 +70,7 @@ string s3fs_md5sum(int fd, off_t start, ssize_t size)
 string s3fs_sha256sum(int fd, off_t start, ssize_t size)
 {
   size_t digestlen = get_sha256_digest_length();
-  char sha256[2 * digestlen + 1];
+  string sha256;
   char hexbuf[3];
   unsigned char* sha256hex;
 
@@ -78,14 +78,13 @@ string s3fs_sha256sum(int fd, off_t start, ssize_t size)
     return string("");
   }
 
-  memset(sha256, 0, 2 * digestlen + 1);
   for(size_t pos = 0; pos < digestlen; pos++){
     snprintf(hexbuf, 3, "%02x", sha256hex[pos]);
-    strncat(sha256, hexbuf, 2);
+    sha256.append(hexbuf, 2);
   }
   free(sha256hex);
 
-  return string(sha256);
+  return sha256;
 }
 
 /*

@@ -3817,37 +3817,19 @@ int S3fsMultiCurl::MultiPerform(void)
       S3FS_PRN_DBG("curl_multi_perform code: %d msg: %s", curlm_code, curl_multi_strerror(curlm_code));
     }
 
-    // Set timer when still running
-    if(still_running) {
-      long milliseconds;
-      fd_set r_fd;
-      fd_set w_fd;
-      fd_set e_fd;
-      FD_ZERO(&r_fd);
-      FD_ZERO(&w_fd);
-      FD_ZERO(&e_fd);
+    int numfds;
+    curlm_code = curl_multi_wait(hMulti, NULL, 0, 1000, &numfds);
+    if(curlm_code != CURLM_OK) {
+      S3FS_PRN_ERR("curl_multi_wait code: %d msg: %s", curlm_code, curl_multi_strerror(curlm_code));
+      return -EIO;
+    }
 
-      if(CURLM_OK != (curlm_code = curl_multi_timeout(hMulti, &milliseconds))){
-        S3FS_PRN_DBG("curl_multi_timeout code: %d msg: %s", curlm_code, curl_multi_strerror(curlm_code));
-      }
-      if(milliseconds < 0){
-        milliseconds = 50;
-      }
-      if(milliseconds > 0) {
-        int max_fd;
-        struct timeval timeout;
-        timeout.tv_sec  = 1000 * milliseconds / 1000000;
-        timeout.tv_usec = 1000 * milliseconds % 1000000;
-
-        if(CURLM_OK != (curlm_code = curl_multi_fdset(hMulti, &r_fd, &w_fd, &e_fd, &max_fd))){
-          S3FS_PRN_ERR("curl_multi_fdset code: %d msg: %s", curlm_code, curl_multi_strerror(curlm_code));
-          return -EIO;
-        }
-        if(-1 == select(max_fd + 1, &r_fd, &w_fd, &e_fd, &timeout)){
-          S3FS_PRN_ERR("failed select - errno(%d)", errno);
-          return -errno;
-        }
-      }
+    if (!numfds) {
+      int64_t milliseconds = 100;
+      struct timespec ts;
+      ts.tv_sec  = milliseconds / 1000;
+      ts.tv_nsec = (milliseconds % 1000) * 1000000;
+      nanosleep(&ts, NULL);
     }
   }while(still_running);
 
