@@ -1,0 +1,10 @@
+prefix=/home/lichaojun/software/libunwind-1.1/output
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: libunwind-setjmp
+Description: libunwind setjmp library
+Version: 1.1
+Requires: libunwind
+Libs: -L${libdir} -lunwind-setjmp

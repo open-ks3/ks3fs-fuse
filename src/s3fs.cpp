@@ -53,6 +53,12 @@
 #include "s3fs_auth.h"
 #include "addhead.h"
 
+#ifdef _USE_PROFILE
+#include "google/malloc_extension.h"
+#include "google/profiler.h"
+#include "google/heap-profiler.h"
+#endif
+
 using namespace std;
 
 //-------------------------------------------------------------------
@@ -5619,6 +5625,53 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
   return 1;
 }
 
+static void gprof_callback(int signum)
+{
+#ifdef _USE_PROFILE
+  if (signum == SIGUSR1)
+  {
+    S3FS_PRN_INFO("CPU ProfilerStart ...");
+    ProfilerStart("/tmp/CPU.prof");
+    sleep(30);
+    ProfilerStop();
+    S3FS_PRN_INFO("CPU ProfilerStop");
+  }
+  else if (signum == SIGUSR2)
+  {
+    S3FS_PRN_INFO("Heap ProfilerStart ...");
+    HeapProfilerStart("/tmp/Heap.prof");
+    sleep(30);
+    HeapProfilerStop();
+    S3FS_PRN_INFO("Heap ProfilerStop");
+  }
+#else
+    S3FS_PRN_WARN("please use \"make USE_PROFILE=True\" to compile");
+#endif
+}
+
+static void setup_signal()
+{
+  struct sigaction profstat;
+  profstat.sa_handler = gprof_callback;
+  profstat.sa_flags = 0;
+  sigemptyset(&profstat.sa_mask);
+  sigaddset(&profstat.sa_mask, SIGUSR1);
+  sigaddset(&profstat.sa_mask, SIGUSR2);
+
+  if ( sigaction(SIGUSR1, &profstat,NULL) < 0 )
+  {
+    S3FS_PRN_ERR("Fail to connect signal SIGUSR1 with cpu profiling");
+  } else {
+    S3FS_PRN_INFO("Succeed to connect signal SIGUSR1 with cpu profiling");
+  }
+  if ( sigaction(SIGUSR2, &profstat,NULL) < 0 )
+  {
+    S3FS_PRN_ERR("Fail to connect signal SIGUSR2 with start heap profiling");
+  } else {
+    S3FS_PRN_INFO("Succeed to connect signal SIGUSR2 with stop heap profiling");
+  }
+}
+
 int main(int argc, char* argv[])
 {
   int ch;
@@ -5891,6 +5944,8 @@ int main(int argc, char* argv[])
     S3FS_PRN_EXIT("could not set signal handler for SIGUSR2.");
     exit(EXIT_FAILURE);
   }
+
+  setup_signal();
 
   // now passing things off to fuse, fuse will finish evaluating the command line args
   fuse_res = fuse_main(custom_args.argc, custom_args.argv, &s3fs_oper, NULL);
