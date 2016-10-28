@@ -85,7 +85,7 @@ enum s3fs_log_level{
        localtime_r(&(tv_now.tv_sec), &tm_now);  \
        if(S3FS_LOG_CRIT == level || (S3FS_LOG_CRIT != debug_level && level == (debug_level & level))){ \
          if(foreground){ \
-           fprintf(stdout, "%s[%04d-%02d-%02d %02d:%02d:%02d %06ld] [%d] %s:%s(%d): " fmt "%s\n", S3FS_LOG_LEVEL_STRING(level), tm_now.tm_year + 1900, tm_now.tm_mon + 1, tm_now.tm_mday, tm_now.tm_hour, tm_now.tm_min, tm_now.tm_sec, tv_now.tv_usec, getpid(), __FILE__, __func__, __LINE__, __VA_ARGS__); \
+           fprintf(stdout, "%s[%04d-%02d-%02d %02d:%02d:%02d %06ld] [%u] %s:%s(%d): " fmt "%s\n", S3FS_LOG_LEVEL_STRING(level), tm_now.tm_year + 1900, tm_now.tm_mon + 1, tm_now.tm_mday, tm_now.tm_hour, tm_now.tm_min, tm_now.tm_sec, tv_now.tv_usec, (uint32_t)pthread_self(), __FILE__, __func__, __LINE__, __VA_ARGS__); \
          }else{ \
            syslog(S3FS_LOG_LEVEL_TO_SYSLOG(level), "%s:%s(%d): " fmt "%s", __FILE__, __func__, __LINE__, __VA_ARGS__); \
          } \
@@ -100,7 +100,7 @@ enum s3fs_log_level{
        localtime_r(&(tv_now.tv_sec), &tm_now);  \
        if(S3FS_LOG_CRIT == level || (S3FS_LOG_CRIT != debug_level && level == (debug_level & level))){ \
          if(foreground){ \
-           fprintf(stdout, "%s[%04d-%02d-%02d %02d:%02d:%02d %06ld] [%d] %s%s:%s(%d): " fmt "%s\n", S3FS_LOG_LEVEL_STRING(level), tm_now.tm_year + 1900, tm_now.tm_mon + 1, tm_now.tm_mday, tm_now.tm_hour, tm_now.tm_min, tm_now.tm_sec, tv_now.tv_usec, getpid(), S3FS_LOG_NEST(nest), __FILE__, __func__, __LINE__, __VA_ARGS__); \
+           fprintf(stdout, "%s[%04d-%02d-%02d %02d:%02d:%02d %06ld] [%u] %s%s:%s(%d): " fmt "%s\n", S3FS_LOG_LEVEL_STRING(level), tm_now.tm_year + 1900, tm_now.tm_mon + 1, tm_now.tm_mday, tm_now.tm_hour, tm_now.tm_min, tm_now.tm_sec, tv_now.tv_usec, (uint32_t)pthread_self(), S3FS_LOG_NEST(nest), __FILE__, __func__, __LINE__, __VA_ARGS__); \
          }else{ \
            syslog(S3FS_LOG_LEVEL_TO_SYSLOG(level), "%s" fmt "%s", S3FS_LOG_NEST(nest), __VA_ARGS__); \
          } \
