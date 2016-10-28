@@ -5639,7 +5639,10 @@ static void gprof_callback(int signum)
   if (signum == SIGUSR1)
   {
     S3FS_PRN_INFO("CPU ProfilerStart ...");
-    ProfilerStart("/tmp/CPU.prof");
+    if (!ProfilerStart("/tmp/CPU.prof")) {
+      S3FS_PRN_WARN("Another profiler is running");
+      return;
+    }
     sleep(profile_interval);
     ProfilerStop();
     S3FS_PRN_INFO("CPU ProfilerStop");
@@ -5647,9 +5650,10 @@ static void gprof_callback(int signum)
   else if (signum == SIGUSR2)
   {
     S3FS_PRN_INFO("Heap ProfilerStart ...");
-    HeapProfilerStart("/tmp/Heap.prof");
-    sleep(profile_interval);
-    HeapProfilerStop();
+    MallocExtensionWriter obj;
+    MallocExtension::instance()->GetHeapSample(&obj);
+    ofstream out("/tmp/Heap.prof");
+    out.write(obj.c_str(), obj.length());
     S3FS_PRN_INFO("Heap ProfilerStop");
   }
 }
