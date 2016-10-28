@@ -1,5 +1,5 @@
-
 sh autogen.sh
+export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 ./configure
 
 INCTCMALLOC="-I../third-party/tcmalloc/output/include"
@@ -13,7 +13,7 @@ if [ "$DEPS_LIBS" != "" ]; then
     sed -i "s:^DEPS_LIBS = .*:$DEPS_LIBS $LIBTCMALLOC:g" src/Makefile
 fi
 
-make USE_PROFILE=True -j
+make -j
 make install
 
 #CXXFLAGS = -std=c++11 -g -fstack-protector -fno-omit-frame-pointer -fsanitize=address -ggdb -Wall -D_FILE_OFFSET_BITS=64

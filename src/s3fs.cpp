@@ -53,11 +53,9 @@
 #include "s3fs_auth.h"
 #include "addhead.h"
 
-#ifdef _USE_PROFILE
 #include "google/malloc_extension.h"
 #include "google/profiler.h"
 #include "google/heap-profiler.h"
-#endif
 
 using namespace std;
 
@@ -5627,7 +5625,6 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
 
 static void gprof_callback(int signum)
 {
-#ifdef _USE_PROFILE
   if (signum == SIGUSR1)
   {
     S3FS_PRN_INFO("CPU ProfilerStart ...");
@@ -5644,9 +5641,6 @@ static void gprof_callback(int signum)
     HeapProfilerStop();
     S3FS_PRN_INFO("Heap ProfilerStop");
   }
-#else
-    S3FS_PRN_WARN("please use \"make USE_PROFILE=True\" to compile");
-#endif
 }
 
 static void setup_signal()
