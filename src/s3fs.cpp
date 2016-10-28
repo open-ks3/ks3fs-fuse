@@ -134,6 +134,7 @@ static size_t postfix_length      = 10;
 static bool no_split_file         = false;
 static uint64_t split_file_size   = FOUR_GB;
 static bool read_use_split_file_size = true;
+static int profile_interval       = 60;
 
 //-------------------------------------------------------------------
 // Static functions : prototype
@@ -5563,6 +5564,16 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
          return 0;
     }
 
+    if(0 == STR2NCMP(arg, "profile_interval=")){
+        int interval = static_cast<int>(s3fs_strtoofft(strchr(arg, '=') + sizeof(char)));
+        if(0 >= interval){
+          S3FS_PRN_EXIT("argument should be over 1: profile_interval");
+          return -1;
+        }
+        profile_interval = interval;
+        return 0;
+    }
+
     //
     // debug option for s3fs
     //
@@ -5629,7 +5640,7 @@ static void gprof_callback(int signum)
   {
     S3FS_PRN_INFO("CPU ProfilerStart ...");
     ProfilerStart("/tmp/CPU.prof");
-    sleep(30);
+    sleep(profile_interval);
     ProfilerStop();
     S3FS_PRN_INFO("CPU ProfilerStop");
   }
@@ -5637,7 +5648,7 @@ static void gprof_callback(int signum)
   {
     S3FS_PRN_INFO("Heap ProfilerStart ...");
     HeapProfilerStart("/tmp/Heap.prof");
-    sleep(30);
+    sleep(profile_interval);
     HeapProfilerStop();
     S3FS_PRN_INFO("Heap ProfilerStop");
   }
