@@ -1925,22 +1925,22 @@ int S3fsCurl::RequestPerform(void)
         // Service response codes which are >= 400 && < 500
         switch(LastResponseCode){
           case 400:
-            S3FS_PRN_INFO3("HTTP response code 400 was returned, returning EIO.");
+            S3FS_PRN_ERR("HTTP response code 400 was returned, returning EIO.");
             S3FS_PRN_DBG("Body Text: %s", (bodydata ? bodydata->str() : ""));
             return -EIO;
 
           case 403:
-            S3FS_PRN_INFO3("HTTP response code 403 was returned, returning EPERM");
+            S3FS_PRN_ERR("HTTP response code 403 was returned, returning EPERM");
             S3FS_PRN_DBG("Body Text: %s", (bodydata ? bodydata->str() : ""));
             return -EPERM;
 
           case 404:
-            S3FS_PRN_INFO3("HTTP response code 404 was returned, returning ENOENT");
+            S3FS_PRN_ERR("HTTP response code 404 was returned, returning ENOENT");
             S3FS_PRN_DBG("Body Text: %s", (bodydata ? bodydata->str() : ""));
             return -ENOENT;
 
           default:
-            S3FS_PRN_INFO3("HTTP response code = %ld, returning EIO", LastResponseCode);
+            S3FS_PRN_ERR("HTTP response code = %ld, returning EIO", LastResponseCode);
             S3FS_PRN_DBG("Body Text: %s", (bodydata ? bodydata->str() : ""));
             return -EIO;
         }
@@ -2035,16 +2035,20 @@ int S3fsCurl::RequestPerform(void)
       case CURLE_HTTP_RETURNED_ERROR:
         S3FS_PRN_ERR("### CURLE_HTTP_RETURNED_ERROR");
 
-        if(0 != curl_easy_getinfo(hCurl, CURLINFO_RESPONSE_CODE, &LastResponseCode)){
+        curlCode = curl_easy_getinfo(hCurl, CURLINFO_RESPONSE_CODE, &LastResponseCode);
+        if(0 != curlCode){
+          S3FS_PRN_ERR("curlCode: %d  msg: %s", curlCode, curl_easy_strerror(curlCode));
           return -EIO;
         }
         S3FS_PRN_INFO3("HTTP response code =%ld", LastResponseCode);
 
         // Let's try to retrieve the 
         if(404 == LastResponseCode){
+          S3FS_PRN_ERR("HTTP response code =%ld", LastResponseCode);
           return -ENOENT;
         }
         if(500 > LastResponseCode){
+          S3FS_PRN_ERR("HTTP response code =%ld", LastResponseCode);
           return -EIO;
         }
         break;
@@ -2058,7 +2062,7 @@ int S3fsCurl::RequestPerform(void)
     S3FS_PRN_INFO("### retrying...");
 
     if(!RemakeHandle()){
-      S3FS_PRN_INFO("Failed to reset handle and internal data for retrying.");
+      S3FS_PRN_ERR("Failed to reset handle and internal data for retrying.");
       return -EIO;
     }
   }
@@ -2320,6 +2324,7 @@ int S3fsCurl::GetIAMCredentials(void)
   type = REQTYPE_IAMCRED;
 
   if(!CreateCurlHandle(true)){
+    S3FS_PRN_ERR("return EIO");
     return -EIO;
   }
 
@@ -3912,6 +3917,7 @@ int S3fsMultiCurl::MultiRead(void)
             cMap_all[retrycurl->hCurl] = retrycurl;
           }else{
             // Could not set up callback.
+            S3FS_PRN_ERR("return EIO");
             return -EIO;
           }
         }
