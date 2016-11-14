@@ -936,7 +936,8 @@ static int ks3fs_getattr(const char* path, struct stat* stbuf)
   if (stbuf) {
     *stbuf = st;
     stbuf->st_size = file_size;
-    stbuf->st_blocks = 0;
+    stbuf->st_blksize = 4096;
+    stbuf->st_blocks  = get_blocks(stbuf->st_size);
   }
   S3FS_PRN_DBG("[path=%s] uid=%u, gid=%u, mode=%04o", path, (unsigned int)(stbuf->st_uid), (unsigned int)(stbuf->st_gid), stbuf->st_mode);
 
