@@ -42,6 +42,7 @@
 #include "string_util.h"
 #include "s3fs.h"
 #include "s3fs_auth.h"
+#include "version.h"
 
 using namespace std;
 
@@ -1260,6 +1261,8 @@ void show_version(void)
   "This is free software: you are free to change and redistribute it.\n"
   "There is NO WARRANTY, to the extent permitted by law.\n",
   VERSION, COMMIT_HASH_VAL, s3fs_crypt_lib_name());
+  printf("%-16s: %s\n", "branch", kBranch);
+  printf("%-16s: %s\n", "version info", kVersionInfo);
   return;
 }
 
