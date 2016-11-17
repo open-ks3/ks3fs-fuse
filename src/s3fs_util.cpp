@@ -60,6 +60,9 @@ string get_realpath(const char *path) {
   return realpath;
 }
 
+string get_original_path(const std::string& path) {
+  return path.substr(mount_prefix.length(), path.length() - mount_prefix.length());
+}
 //-------------------------------------------------------------------
 // Class S3ObjList
 //-------------------------------------------------------------------

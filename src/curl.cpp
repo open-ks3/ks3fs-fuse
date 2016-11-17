@@ -1164,7 +1164,7 @@ S3fsCurl* S3fsCurl::UploadMultipartPostRetryCallback(S3fsCurl* s3fscurl)
   newcurl->retry_count         = s3fscurl->retry_count + 1;
 
   // setup new curl object
-  if(0 != newcurl->UploadMultipartPostSetup(s3fscurl->path.c_str(), part_num, upload_id)){
+  if(0 != newcurl->UploadMultipartPostSetup(get_original_path(s3fscurl->path).c_str(), part_num, upload_id)){
     S3FS_PRN_ERR("Could not duplicate curl object(%s:%d).", s3fscurl->path.c_str(), part_num);
     delete newcurl;
     return NULL;
@@ -1276,7 +1276,7 @@ S3fsCurl* S3fsCurl::ParallelGetObjectRetryCallback(S3fsCurl* s3fscurl)
 
   // duplicate request(setup new curl object)
   S3fsCurl* newcurl = new S3fsCurl(s3fscurl->IsUseAhbe());
-  if(0 != (result = newcurl->PreGetObjectRequest(s3fscurl->path.c_str(), s3fscurl->partdata.fd,
+  if(0 != (result = newcurl->PreGetObjectRequest(get_original_path(s3fscurl->path).c_str(), s3fscurl->partdata.fd,
      s3fscurl->partdata.startpos, s3fscurl->partdata.size, s3fscurl->b_ssetype, s3fscurl->b_ssevalue)))
   {
     S3FS_PRN_ERR("failed downloading part setup(%d)", result);
