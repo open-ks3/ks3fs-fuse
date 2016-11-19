@@ -709,6 +709,7 @@ void FdEntity::Close(void)
         }
       }
       if(pfile){
+        S3FS_PRN_DBG("close tmpfile for %s", path.c_str());
         fclose(pfile);
         pfile = NULL;
       }

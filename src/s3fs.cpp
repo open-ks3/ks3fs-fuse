@@ -2674,6 +2674,7 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
       }
     }
   } else {
+    FdEntity* ent;
     if (real_offset == 0 && cur_file_no != 0) {
       // need split file
       struct stat st;
@@ -2681,7 +2682,6 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
       if (0 != (result = s3fs_getattr(last_part_file.c_str(), &st))) {
         return result;
       }
-      FdEntity* ent;
       if(NULL != (ent = FdManager::get()->GetFdEntity(last_part_file.c_str()))){
         fi->fh = ent->GetFd();
         if (0 != (result = s3fs_flush(last_part_file.c_str(), fi))) {
@@ -2694,10 +2694,12 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
       }
     }
     // support for append write
-    if(NULL == FdManager::get()->ExistOpen(real_path.c_str(), static_cast<int>(fi->fh))) {
+    if(NULL == (ent = FdManager::get()->ExistOpen(real_path.c_str(), static_cast<int>(fi->fh)))){
       if (0 != (result = s3fs_open(real_path.c_str(), fi))) {
         return result;
       }
+    } else {
+      FdManager::get()->Close(ent);
     }
   }
 
