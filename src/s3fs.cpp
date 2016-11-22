@@ -135,6 +135,7 @@ static bool read_use_split_file_size = true;
 // Static functions : prototype
 //-------------------------------------------------------------------
 static void s3fs_usr2_handler(int sig);
+static bool set_s3fs_usr1_handler(void);
 static bool set_s3fs_usr2_handler(void);
 static s3fs_log_level set_s3fs_log_level(s3fs_log_level level);
 static s3fs_log_level bumpup_s3fs_log_level(void);
@@ -265,6 +266,25 @@ static int s3fs_removexattr(const char* path, const char* name);
 //-------------------------------------------------------------------
 // Functions
 //-------------------------------------------------------------------
+static void s3fs_usr1_handler(int sig)
+{
+  if(SIGUSR1 == sig){
+    S3fsCurl::SetVerbose(!S3fsCurl::GetVerbose());
+  }
+}
+static bool set_s3fs_usr1_handler(void)
+{
+  struct sigaction sa;
+
+  memset(&sa, 0, sizeof(struct sigaction));
+  sa.sa_handler = s3fs_usr1_handler;
+  sa.sa_flags   = SA_RESTART;
+  if(0 != sigaction(SIGUSR1, &sa, NULL)){
+    return false;
+  }
+  return true;
+}
+
 static void s3fs_usr2_handler(int sig)
 {
   if(SIGUSR2 == sig){
@@ -5907,6 +5927,10 @@ int main(int argc, char* argv[])
   }
 
   // set signal handler for debugging
+  if(!set_s3fs_usr1_handler()){
+    S3FS_PRN_EXIT("could not set signal handler for SIGUSR1.");
+    exit(EXIT_FAILURE);
+  }
   if(!set_s3fs_usr2_handler()){
     S3FS_PRN_EXIT("could not set signal handler for SIGUSR2.");
     exit(EXIT_FAILURE);
