@@ -93,7 +93,7 @@ std::string service_path          = "/";
 std::string host                  = "http://s3.amazonaws.com";
 std::string bucket                = "";
 std::string endpoint              = "us-east-1";
-s3fs_log_level debug_level        = S3FS_LOG_CRIT;
+s3fs_log_level debug_level        = S3FS_LOG_ERR;
 const char*    s3fs_log_nest[S3FS_LOG_NEST_MAX] = {"", "  ", "    ", "      "};
 
 //-------------------------------------------------------------------
@@ -286,6 +286,7 @@ static bool set_s3fs_usr2_handler(void)
 
 static s3fs_log_level set_s3fs_log_level(s3fs_log_level level)
 {
+  LOGGER.set_log_level(level);
   if(level == debug_level){
     return debug_level;
   }
@@ -304,6 +305,7 @@ static s3fs_log_level bumpup_s3fs_log_level(void)
                          S3FS_LOG_WARN == debug_level ? S3FS_LOG_INFO :
                          S3FS_LOG_INFO == debug_level ? S3FS_LOG_DBG :
                          S3FS_LOG_CRIT );
+  LOGGER.set_log_level(debug_level);
   setlogmask(LOG_UPTO(S3FS_LOG_LEVEL_TO_SYSLOG(debug_level)));
   S3FS_PRN_CRIT("change debug level from %sto %s", S3FS_LOG_LEVEL_STRING(old), S3FS_LOG_LEVEL_STRING(debug_level));
   return old;
@@ -4147,7 +4149,7 @@ static void* ks3fs_init(struct fuse_conn_info* conn)
 
 static void* s3fs_init(struct fuse_conn_info* conn)
 {
-  S3FS_PRN_CRIT("init v%s(commit:%s) with %s", VERSION, COMMIT_HASH_VAL, s3fs_crypt_lib_name());
+  S3FS_PRN_INFO("init v%s(commit:%s) with %s", VERSION, COMMIT_HASH_VAL, s3fs_crypt_lib_name());
 
   // cache(remove cache dirs at first)
   if(is_remove_cache && (!CacheFileStat::DeleteCacheFileStatDirectory() || !FdManager::DeleteCacheDirectory())){
@@ -5160,6 +5162,10 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
       S3fsCurl::SetRetries(static_cast<int>(s3fs_strtoofft(strchr(arg, '=') + sizeof(char))));
       return 0;
     }
+    if(0 == STR2NCMP(arg, "log_path=")){
+      LOGGER.SetLogPrefix(strchr(arg, '=') + sizeof(char), "s3fs");
+      return 0;
+    }
     if(0 == STR2NCMP(arg, "use_cache=")){
       if(!FdManager::SetCacheDir(strchr(arg, '=') + sizeof(char))){
         S3FS_PRN_EXIT("cache directory(%s) is specified, but it does not exist or is not directory.", strchr(arg, '=') + sizeof(char));
@@ -5633,6 +5639,7 @@ int main(int argc, char* argv[])
   int fuse_res;
   int option_index = 0; 
   struct fuse_operations s3fs_oper;
+  std::string log_path = "/var/log/s3fs";
 
   static const struct option long_opts[] = {
     {"help",    no_argument, NULL, 'h'},
@@ -5684,6 +5691,11 @@ int main(int argc, char* argv[])
       exit(EXIT_FAILURE);
     }
   }
+
+  LOGGER.set_max_file_count(7);
+  LOGGER.SetLogPrefix("/var/log/s3fs", "s3fs");
+  LOGGER.set_need_thread_id(true);
+  LOGGER.set_rotate_by_day(true);
 
   // Load SSE environment
   if(!S3fsCurl::LoadEnvSse()){
