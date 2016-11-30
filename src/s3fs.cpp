@@ -1649,7 +1649,8 @@ static int rename_directory(const char* from, const char* to)
   // does a safe copy - copies first and then deletes old
   for(mn_cur = mn_head; mn_cur; mn_cur = mn_cur->next){
     if(!mn_cur->is_dir){
-      if(!nocopyapi && !norenameapi){
+      //if(!nocopyapi && !norenameapi){
+      if(!norenameapi){
         result = rename_object(mn_cur->old_path, mn_cur->new_path);
       }else{
         result = rename_object_nocopy(mn_cur->old_path, mn_cur->new_path);
@@ -1732,7 +1733,8 @@ static int s3fs_rename(const char* from, const char* to)
   }else if(!nomultipart && buf.st_size >= singlepart_copy_limit){
     result = rename_large_object(from, to);
   }else{
-    if(!nocopyapi && !norenameapi){
+    //if(!nocopyapi && !norenameapi){
+    if(!norenameapi){
       result = rename_object(from, to);
     }else{
       result = rename_object_nocopy(from, to);
