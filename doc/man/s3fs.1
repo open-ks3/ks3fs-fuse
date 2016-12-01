@@ -224,6 +224,11 @@ This option set fuse fuction <read> implement get file size by s3 or default spl
 If you want get file state by s3, you can set this option=false or 0.
 use s3 handles get file state size have poor performance
 .TP
+\fB\-o\fR compatible_read(default is false)
+This option set fuse support read no split file.
+If you want set this option, you can read file uploaded from other way,
+but read the file which written through fuse will off 50% performance.
+.TP
 \fB\-o\fR noxmlns - disable registing xml name space.
 disable registing xml name space for response of ListBucketResult and ListVersionsResult etc. Default name space is looked up from "http://s3.amazonaws.com/doc/2006-03-01".
 This option should not be specified now, because s3fs looks up xmlns automatically after v1.66.

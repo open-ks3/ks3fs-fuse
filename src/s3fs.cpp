@@ -130,6 +130,7 @@ static size_t postfix_length      = 10;
 static bool no_split_file         = false;
 static uint64_t split_file_size   = FOUR_GB;
 static bool read_use_split_file_size = true;
+static bool compatible_read = false;
 
 //-------------------------------------------------------------------
 // Static functions : prototype
@@ -888,7 +889,10 @@ static int list_part_files(const char* path, s3obj_list_t& part_files, off_t* fi
   }
 
   struct stat st;
-  if (0 == s3fs_getattr(path, &st) && S_ISDIR(st.st_mode)) {
+  if ((0 == s3fs_getattr(path, &st)) && (S_ISDIR(st.st_mode) || compatible_read)) {
+    if (file_size) {
+      *file_size = st.st_size;
+    }
     part_files.push_back(string(path));
     return 0;
   }
@@ -2614,20 +2618,24 @@ static int ks3fs_read_use_split_file_size(const char* path, char* buf, size_t si
 
   S3FS_PRN_DBG("[path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
 
-
-  FdEntity* ent;
-  if(NULL == (ent = FdManager::get()->GetFdEntity(real_path.c_str()))){
-    if (0 != (result = s3fs_open(real_path.c_str(), fi))) {
+  if (compatible_read && 0 == (get_object_attribute(path, NULL))) {
+    if (FdManager::get()->GetFdEntity(path) == NULL && 0 != (result = s3fs_open(path, fi))) {
       return result;
     }
-  }
-
-  size_t left_size = (cur_file_no + 1) * split_file_size - offset;
-  if (left_size < size) {
-    // vfs will reread the left
-    return s3fs_read(real_path.c_str(), buf, left_size, real_offset, fi);
+    S3FS_PRN_DBG("[read old path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
+    return s3fs_read(path, buf, size, offset, fi);
   } else {
-    return s3fs_read(real_path.c_str(), buf, size, real_offset, fi);
+    if (FdManager::get()->GetFdEntity(real_path.c_str()) == NULL && 0 != (result = s3fs_open(real_path.c_str(), fi))) {
+      return result;
+    }
+    S3FS_PRN_DBG("[read new path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
+    size_t left_size = (cur_file_no + 1) * split_file_size - offset;
+    if (left_size < size) {
+      // vfs will reread the left
+      return s3fs_read(real_path.c_str(), buf, left_size, real_offset, fi);
+    } else {
+      return s3fs_read(real_path.c_str(), buf, size, real_offset, fi);
+    }
   }
 }
 
@@ -2674,12 +2682,12 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
   if (offset == 0) {
     // for rewrite same file
     s3obj_list_t part_files;
-    if (0 != (result = list_part_files(path, part_files))) {
+    if (0 != (result = list_part_files(path, part_files)) || part_files.size() == 0) {
       return result;
     }
 
     struct stat st;
-    if (0 != (result = s3fs_getattr(real_path.c_str(), &st))) {
+    if (0 != (result = s3fs_getattr(part_files.begin()->c_str(), &st))) {
       return result;
     }
 
@@ -5640,6 +5648,10 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
     }
     if(0 == strcmp(arg, "curldbg")){
       S3fsCurl::SetVerbose(true);
+      return 0;
+    }
+    if(0 == strcmp(arg, "compatible_read")){
+      compatible_read = true;
       return 0;
     }
 
