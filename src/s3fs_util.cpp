@@ -42,6 +42,7 @@
 #include "string_util.h"
 #include "s3fs.h"
 #include "s3fs_auth.h"
+#include "version.h"
 
 using namespace std;
 
@@ -60,6 +61,9 @@ string get_realpath(const char *path) {
   return realpath;
 }
 
+string get_original_path(const std::string& path) {
+  return path.substr(mount_prefix.length(), path.length() - mount_prefix.length());
+}
 //-------------------------------------------------------------------
 // Class S3ObjList
 //-------------------------------------------------------------------
@@ -1177,6 +1181,11 @@ void show_help (void)
     "      If you want get file state by s3, you can set this option=false or 0.\n"
     "      use s3 handles get file state size have poor performance\n"
     "\n"
+    "   compatible_read(default is false)\n"
+    "      This option set fuse support read no split file. \n"
+    "      If you want set this option, you can read file uploaded from other way,\n"
+    "      but read the file which written through fuse will off 50%% performance.\n"
+    "\n"
     "   noxmlns (disable registering xml name space)\n"
     "        disable registering xml name space for response of \n"
     "        ListBucketResult and ListVersionsResult etc. Default name \n"
@@ -1257,6 +1266,8 @@ void show_version(void)
   "This is free software: you are free to change and redistribute it.\n"
   "There is NO WARRANTY, to the extent permitted by law.\n",
   VERSION, COMMIT_HASH_VAL, s3fs_crypt_lib_name());
+  printf("%-16s: %s\n", "branch", kBranch);
+  printf("%-16s: %s\n", "version info", kVersionInfo);
   return;
 }
 

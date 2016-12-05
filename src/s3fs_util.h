@@ -105,6 +105,7 @@ class AutoLock
 // Functions
 //-------------------------------------------------------------------
 std::string get_realpath(const char *path);
+std::string get_original_path(const std::string& path);
 
 MVNODE *create_mvnode(const char *old_path, const char *new_path, bool is_dir, bool normdir = false);
 MVNODE *add_mvnode(MVNODE** head, MVNODE** tail, const char *old_path, const char *new_path, bool is_dir, bool normdir = false);

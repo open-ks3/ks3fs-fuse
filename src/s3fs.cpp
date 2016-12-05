@@ -97,7 +97,7 @@ std::string service_path          = "/";
 std::string host                  = "http://s3.amazonaws.com";
 std::string bucket                = "";
 std::string endpoint              = "us-east-1";
-s3fs_log_level debug_level        = S3FS_LOG_CRIT;
+s3fs_log_level debug_level        = S3FS_LOG_ERR;
 const char*    s3fs_log_nest[S3FS_LOG_NEST_MAX] = {"", "  ", "    ", "      "};
 
 //-------------------------------------------------------------------
@@ -135,11 +135,13 @@ static bool no_split_file         = false;
 static uint64_t split_file_size   = FOUR_GB;
 static bool read_use_split_file_size = true;
 static int profile_interval       = 60;
+static bool compatible_read = false;
 
 //-------------------------------------------------------------------
 // Static functions : prototype
 //-------------------------------------------------------------------
 static void s3fs_usr2_handler(int sig);
+static bool set_s3fs_usr1_handler(void);
 static bool set_s3fs_usr2_handler(void);
 static s3fs_log_level set_s3fs_log_level(s3fs_log_level level);
 static s3fs_log_level bumpup_s3fs_log_level(void);
@@ -270,6 +272,25 @@ static int s3fs_removexattr(const char* path, const char* name);
 //-------------------------------------------------------------------
 // Functions
 //-------------------------------------------------------------------
+static void s3fs_usr1_handler(int sig)
+{
+  if(SIGUSR1 == sig){
+    S3fsCurl::SetVerbose(!S3fsCurl::GetVerbose());
+  }
+}
+static bool set_s3fs_usr1_handler(void)
+{
+  struct sigaction sa;
+
+  memset(&sa, 0, sizeof(struct sigaction));
+  sa.sa_handler = s3fs_usr1_handler;
+  sa.sa_flags   = SA_RESTART;
+  if(0 != sigaction(SIGUSR1, &sa, NULL)){
+    return false;
+  }
+  return true;
+}
+
 static void s3fs_usr2_handler(int sig)
 {
   if(SIGUSR2 == sig){
@@ -291,6 +312,7 @@ static bool set_s3fs_usr2_handler(void)
 
 static s3fs_log_level set_s3fs_log_level(s3fs_log_level level)
 {
+  LOGGER.set_log_level(level);
   if(level == debug_level){
     return debug_level;
   }
@@ -309,6 +331,7 @@ static s3fs_log_level bumpup_s3fs_log_level(void)
                          S3FS_LOG_WARN == debug_level ? S3FS_LOG_INFO :
                          S3FS_LOG_INFO == debug_level ? S3FS_LOG_DBG :
                          S3FS_LOG_CRIT );
+  LOGGER.set_log_level(debug_level);
   setlogmask(LOG_UPTO(S3FS_LOG_LEVEL_TO_SYSLOG(debug_level)));
   S3FS_PRN_CRIT("change debug level from %sto %s", S3FS_LOG_LEVEL_STRING(old), S3FS_LOG_LEVEL_STRING(debug_level));
   return old;
@@ -871,7 +894,10 @@ static int list_part_files(const char* path, s3obj_list_t& part_files, off_t* fi
   }
 
   struct stat st;
-  if (0 == s3fs_getattr(path, &st) && S_ISDIR(st.st_mode)) {
+  if ((0 == s3fs_getattr(path, &st)) && (S_ISDIR(st.st_mode) || compatible_read)) {
+    if (file_size) {
+      *file_size = st.st_size;
+    }
     part_files.push_back(string(path));
     return 0;
   }
@@ -941,7 +967,8 @@ static int ks3fs_getattr(const char* path, struct stat* stbuf)
   if (stbuf) {
     *stbuf = st;
     stbuf->st_size = file_size;
-    stbuf->st_blocks = 0;
+    stbuf->st_blksize = 4096;
+    stbuf->st_blocks  = get_blocks(stbuf->st_size);
   }
   S3FS_PRN_DBG("[path=%s] uid=%u, gid=%u, mode=%04o", path, (unsigned int)(stbuf->st_uid), (unsigned int)(stbuf->st_gid), stbuf->st_mode);
 
@@ -1631,7 +1658,8 @@ static int rename_directory(const char* from, const char* to)
   // does a safe copy - copies first and then deletes old
   for(mn_cur = mn_head; mn_cur; mn_cur = mn_cur->next){
     if(!mn_cur->is_dir){
-      if(!nocopyapi && !norenameapi){
+      //if(!nocopyapi && !norenameapi){
+      if(!norenameapi){
         result = rename_object(mn_cur->old_path, mn_cur->new_path);
       }else{
         result = rename_object_nocopy(mn_cur->old_path, mn_cur->new_path);
@@ -1714,7 +1742,8 @@ static int s3fs_rename(const char* from, const char* to)
   }else if(!nomultipart && buf.st_size >= singlepart_copy_limit){
     result = rename_large_object(from, to);
   }else{
-    if(!nocopyapi && !norenameapi){
+    //if(!nocopyapi && !norenameapi){
+    if(!norenameapi){
       result = rename_object(from, to);
     }else{
       result = rename_object_nocopy(from, to);
@@ -2594,20 +2623,24 @@ static int ks3fs_read_use_split_file_size(const char* path, char* buf, size_t si
 
   S3FS_PRN_DBG("[path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
 
-
-  FdEntity* ent;
-  if(NULL == (ent = FdManager::get()->GetFdEntity(real_path.c_str()))){
-    if (0 != (result = s3fs_open(real_path.c_str(), fi))) {
+  if (compatible_read && 0 == (get_object_attribute(path, NULL))) {
+    if (FdManager::get()->GetFdEntity(path) == NULL && 0 != (result = s3fs_open(path, fi))) {
       return result;
     }
-  }
-
-  size_t left_size = (cur_file_no + 1) * split_file_size - offset;
-  if (left_size < size) {
-    // vfs will reread the left
-    return s3fs_read(real_path.c_str(), buf, left_size, real_offset, fi);
+    S3FS_PRN_DBG("[read old path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
+    return s3fs_read(path, buf, size, offset, fi);
   } else {
-    return s3fs_read(real_path.c_str(), buf, size, real_offset, fi);
+    if (FdManager::get()->GetFdEntity(real_path.c_str()) == NULL && 0 != (result = s3fs_open(real_path.c_str(), fi))) {
+      return result;
+    }
+    S3FS_PRN_DBG("[read new path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
+    size_t left_size = (cur_file_no + 1) * split_file_size - offset;
+    if (left_size < size) {
+      // vfs will reread the left
+      return s3fs_read(real_path.c_str(), buf, left_size, real_offset, fi);
+    } else {
+      return s3fs_read(real_path.c_str(), buf, size, real_offset, fi);
+    }
   }
 }
 
@@ -2654,12 +2687,12 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
   if (offset == 0) {
     // for rewrite same file
     s3obj_list_t part_files;
-    if (0 != (result = list_part_files(path, part_files))) {
+    if (0 != (result = list_part_files(path, part_files)) || part_files.size() == 0) {
       return result;
     }
 
     struct stat st;
-    if (0 != (result = s3fs_getattr(real_path.c_str(), &st))) {
+    if (0 != (result = s3fs_getattr(part_files.begin()->c_str(), &st))) {
       return result;
     }
 
@@ -2678,6 +2711,7 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
       }
     }
   } else {
+    FdEntity* ent;
     if (real_offset == 0 && cur_file_no != 0) {
       // need split file
       struct stat st;
@@ -2685,7 +2719,6 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
       if (0 != (result = s3fs_getattr(last_part_file.c_str(), &st))) {
         return result;
       }
-      FdEntity* ent;
       if(NULL != (ent = FdManager::get()->GetFdEntity(last_part_file.c_str()))){
         fi->fh = ent->GetFd();
         if (0 != (result = s3fs_flush(last_part_file.c_str(), fi))) {
@@ -2698,10 +2731,12 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
       }
     }
     // support for append write
-    if(NULL == FdManager::get()->ExistOpen(real_path.c_str(), static_cast<int>(fi->fh))) {
+    if(NULL == (ent = FdManager::get()->ExistOpen(real_path.c_str(), static_cast<int>(fi->fh)))){
       if (0 != (result = s3fs_open(real_path.c_str(), fi))) {
         return result;
       }
+    } else {
+      FdManager::get()->Close(ent);
     }
   }
 
@@ -3216,7 +3251,7 @@ static int list_bucket(const char* path, S3ObjList& head, const char* delimiter,
     // For dir with children, expect "dir/" and "dir/child"
     query_maxkey += "max-keys=2";
   }else{
-    query_maxkey += "max-keys=1000";
+    query_maxkey += "max-keys=100";
   }
 
   while(truncated){
@@ -4149,7 +4184,7 @@ static void* ks3fs_init(struct fuse_conn_info* conn)
 
 static void* s3fs_init(struct fuse_conn_info* conn)
 {
-  S3FS_PRN_CRIT("init v%s(commit:%s) with %s", VERSION, COMMIT_HASH_VAL, s3fs_crypt_lib_name());
+  S3FS_PRN_INFO("init v%s(commit:%s) with %s", VERSION, COMMIT_HASH_VAL, s3fs_crypt_lib_name());
 
   // cache(remove cache dirs at first)
   if(is_remove_cache && (!CacheFileStat::DeleteCacheFileStatDirectory() || !FdManager::DeleteCacheDirectory())){
@@ -4909,7 +4944,7 @@ static int get_access_keys(void)
 
   // 1 - keys specified on the command line
   if(S3fsCurl::IsSetAccessKeyId()){
-     return EXIT_SUCCESS;
+    return EXIT_SUCCESS;
   }
 
   // 2 - was specified on the command line
@@ -4985,6 +5020,11 @@ static int get_access_keys(void)
     PF.close();
     return read_passwd_file();
   }
+
+  if(S3fsCurl::SetAccessKey("bCPubcaLG5jstVnENKm/", "6xDXxlrvsaDvaVHJ0erSyO/E/cIkKE/X+q2aZeiO")){
+    return EXIT_SUCCESS;
+  }
+
   S3FS_PRN_EXIT("could not determine how to establish security credentials.");
 
   return EXIT_FAILURE;
@@ -5155,6 +5195,10 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
     }
     if(0 == STR2NCMP(arg, "retries=")){
       S3fsCurl::SetRetries(static_cast<int>(s3fs_strtoofft(strchr(arg, '=') + sizeof(char))));
+      return 0;
+    }
+    if(0 == STR2NCMP(arg, "log_path=")){
+      LOGGER.SetLogPrefix(strchr(arg, '=') + sizeof(char), "s3fs");
       return 0;
     }
     if(0 == STR2NCMP(arg, "use_cache=")){
@@ -5621,6 +5665,10 @@ static int my_fuse_opt_proc(void* data, const char* arg, int key, struct fuse_ar
       S3fsCurl::SetVerbose(true);
       return 0;
     }
+    if(0 == strcmp(arg, "compatible_read")){
+      compatible_read = true;
+      return 0;
+    }
 
     if(0 == STR2NCMP(arg, "accessKeyId=")){
       S3FS_PRN_EXIT("option accessKeyId is no longer supported.");
@@ -5687,6 +5735,7 @@ int main(int argc, char* argv[])
   int fuse_res;
   int option_index = 0; 
   struct fuse_operations s3fs_oper;
+  std::string log_path = "/var/log/s3fs";
 
   static const struct option long_opts[] = {
     {"help",    no_argument, NULL, 'h'},
@@ -5738,6 +5787,11 @@ int main(int argc, char* argv[])
       exit(EXIT_FAILURE);
     }
   }
+
+  LOGGER.set_max_file_count(7);
+  LOGGER.SetLogPrefix("/var/log/s3fs", "s3fs");
+  LOGGER.set_need_thread_id(true);
+  LOGGER.set_rotate_by_day(true);
 
   // Load SSE environment
   if(!S3fsCurl::LoadEnvSse()){
@@ -5949,6 +6003,10 @@ int main(int argc, char* argv[])
   }
 
   // set signal handler for debugging
+  if(!set_s3fs_usr1_handler()){
+    S3FS_PRN_EXIT("could not set signal handler for SIGUSR1.");
+    exit(EXIT_FAILURE);
+  }
   if(!set_s3fs_usr2_handler()){
     S3FS_PRN_EXIT("could not set signal handler for SIGUSR2.");
     exit(EXIT_FAILURE);

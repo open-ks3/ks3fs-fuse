@@ -39,6 +39,7 @@ aclocal \
 && autoheader \
 && automake --add-missing \
 && autoconf
+sh version.sh
 
 echo "--- Finished autotools ----------"
 

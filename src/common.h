@@ -25,6 +25,7 @@
 #include <pthread.h>
 #include <sys/time.h>
 #include "../config.h"
+#include "log.h"
 
 //
 // Extended attribute
@@ -48,35 +49,37 @@
 enum s3fs_log_level{
  S3FS_LOG_CRIT = 0,          // LOG_CRIT
  S3FS_LOG_ERR  = 1,          // LOG_ERR
- S3FS_LOG_WARN = 3,          // LOG_WARNING
- S3FS_LOG_INFO = 7,          // LOG_INFO
- S3FS_LOG_DBG  = 15          // LOG_DEBUG
+ S3FS_LOG_WARN = 2,          // LOG_WARNING
+ S3FS_LOG_INFO = 3,          // LOG_INFO
+ S3FS_LOG_TRACE = 4,          // LOG_TRACE
+ S3FS_LOG_DBG  = 5          // LOG_DEBUG
 };
 
 //
 // Debug macros
 //
 #define IS_S3FS_LOG_CRIT()   (S3FS_LOG_CRIT == debug_level)
-#define IS_S3FS_LOG_ERR()    (S3FS_LOG_ERR  == (debug_level & S3FS_LOG_DBG))
-#define IS_S3FS_LOG_WARN()   (S3FS_LOG_WARN == (debug_level & S3FS_LOG_DBG))
-#define IS_S3FS_LOG_INFO()   (S3FS_LOG_INFO == (debug_level & S3FS_LOG_DBG))
-#define IS_S3FS_LOG_DBG()    (S3FS_LOG_DBG  == (debug_level & S3FS_LOG_DBG))
+#define IS_S3FS_LOG_ERR()    (S3FS_LOG_ERR  == debug_level)
+#define IS_S3FS_LOG_WARN()   (S3FS_LOG_WARN == debug_level)
+#define IS_S3FS_LOG_INFO()   (S3FS_LOG_INFO == debug_level)
+#define IS_S3FS_LOG_DBG()    (S3FS_LOG_DBG  == debug_level)
 
 #define S3FS_LOG_LEVEL_TO_SYSLOG(level) \
-        ( S3FS_LOG_DBG  == (level & S3FS_LOG_DBG) ? LOG_DEBUG   : \
-          S3FS_LOG_INFO == (level & S3FS_LOG_DBG) ? LOG_INFO    : \
-          S3FS_LOG_WARN == (level & S3FS_LOG_DBG) ? LOG_WARNING : \
-          S3FS_LOG_ERR  == (level & S3FS_LOG_DBG) ? LOG_ERR     : LOG_CRIT )
+        ( (level == S3FS_LOG_DBG) ? LOG_DEBUG   : \
+          (level == S3FS_LOG_INFO) ? LOG_INFO    : \
+          (level == S3FS_LOG_WARN) ? LOG_WARNING : \
+          (level == S3FS_LOG_ERR) ? LOG_ERR     : LOG_CRIT )
 
 #define S3FS_LOG_LEVEL_STRING(level) \
-        ( S3FS_LOG_DBG  == (level & S3FS_LOG_DBG) ? "[DBG] " : \
-          S3FS_LOG_INFO == (level & S3FS_LOG_DBG) ? "[INF] " : \
-          S3FS_LOG_WARN == (level & S3FS_LOG_DBG) ? "[WAN] " : \
-          S3FS_LOG_ERR  == (level & S3FS_LOG_DBG) ? "[ERR] " : "[CRT] " )
+        ( (level == S3FS_LOG_DBG) ? "[DBG] " : \
+          (level == S3FS_LOG_INFO) ? "[INF] " : \
+          (level == S3FS_LOG_WARN) ? "[WAN] " : \
+          (level == S3FS_LOG_ERR) ? "[ERR] " : "[CRT] " )
 
 #define S3FS_LOG_NEST_MAX    4
 #define S3FS_LOG_NEST(nest)  (nest < S3FS_LOG_NEST_MAX ? s3fs_log_nest[nest] : s3fs_log_nest[S3FS_LOG_NEST_MAX - 1])
 
+/*
 #define S3FS_LOW_LOGPRN(level, fmt, ...) \
        {  \
        struct tm tm_now;  \
@@ -91,7 +94,6 @@ enum s3fs_log_level{
          } \
        }  \
        }
-
 #define S3FS_LOW_LOGPRN2(level, nest, fmt, ...) \
        {  \
        struct tm tm_now;  \
@@ -114,6 +116,11 @@ enum s3fs_log_level{
          fprintf(stderr, "s3fs: " fmt "%s\n", __VA_ARGS__); \
          syslog(S3FS_LOG_LEVEL_TO_SYSLOG(S3FS_LOG_CRIT), "s3fs: " fmt "%s", __VA_ARGS__); \
        }
+*/
+
+#define S3FS_LOW_LOGPRN(level, fmt, ...) if (level <= LOGGER.log_level()) LOGGER.Write(level, strrchr(__FILE__, '/') ? (strrchr(__FILE__, '/') + 1):__FILE__, __LINE__, __FUNCTION__, fmt, __VA_ARGS__);
+#define S3FS_LOW_LOGPRN2(level, nest, fmt, ...) if (level <= LOGGER.log_level()) LOGGER.Write(level, strrchr(__FILE__, '/') ? (strrchr(__FILE__, '/') + 1):__FILE__, __LINE__, __FUNCTION__, fmt, __VA_ARGS__);
+#define S3FS_LOW_LOGPRN_EXIT(fmt, ...) LOGGER.Write(S3FS_LOG_CRIT, strrchr(__FILE__, '/') ? (strrchr(__FILE__, '/') + 1):__FILE__, __LINE__, __FUNCTION__, fmt, __VA_ARGS__);
 
 // [NOTE]
 // small trick for VA_ARGS

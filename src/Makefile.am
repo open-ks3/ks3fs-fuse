@@ -24,7 +24,7 @@ if USE_GNUTLS_NETTLE
   AM_CPPFLAGS += -DUSE_GNUTLS_NETTLE
 endif
 
-s3fs_SOURCES = s3fs.cpp s3fs.h curl.cpp curl.h cache.cpp cache.h string_util.cpp string_util.h s3fs_util.cpp s3fs_util.h fdcache.cpp fdcache.h common_auth.cpp s3fs_auth.h addhead.cpp addhead.h common.h
+s3fs_SOURCES = s3fs.cpp s3fs.h curl.cpp curl.h cache.cpp cache.h string_util.cpp string_util.h s3fs_util.cpp s3fs_util.h fdcache.cpp fdcache.h common_auth.cpp s3fs_auth.h addhead.cpp addhead.h common.h log.cpp log.h
 if USE_SSL_OPENSSL
   s3fs_SOURCES += openssl_auth.cpp
 endif
@@ -35,7 +35,10 @@ if USE_SSL_NSS
   s3fs_SOURCES += nss_auth.cpp
 endif
 
-s3fs_LDADD = $(DEPS_LIBS)
+INCLUDES = -I../third-party/fuse-2.9.7/include -I ../third-party/curl-7.50.3/include/
+DEPS_LIBS = -lfuse -lrt -ldl -lcurl -lxml2 -lcrypto -lstdc++ -lidn -lssl -lfuse
+s3fs_LDFLAGS = -pthread
+s3fs_LDADD = -L../third-party/fuse-2.9.7/lib -L../third-party/curl-7.50.3/lib/ -L../third-party/gcc-4.8.4/lib $(DEPS_LIBS)
 
 noinst_PROGRAMS = test_string_util
 
