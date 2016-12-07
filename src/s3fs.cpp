@@ -2631,8 +2631,17 @@ static int ks3fs_read_use_split_file_size(const char* path, char* buf, size_t si
     S3FS_PRN_DBG("[read new path=%s][size=%zu][offset=%jd][fd=%llu]", path, size, (intmax_t)offset, (unsigned long long)(fi->fh));
     size_t left_size = (cur_file_no + 1) * split_file_size - offset;
     if (left_size < size) {
-      // vfs will reread the left
-      return s3fs_read(real_path.c_str(), buf, left_size, real_offset, fi);
+      result = s3fs_read(real_path.c_str(), buf, left_size, real_offset, fi);
+      if (result < 0) {
+        return result;
+      } else {
+        int result2 = ks3fs_read_use_split_file_size(path, buf + result, size - result, offset + result, fi);
+        if (result2 < 0) {
+          return result2;
+        } else {
+          return result + result2;
+        }
+      }
     } else {
       return s3fs_read(real_path.c_str(), buf, size, real_offset, fi);
     }
