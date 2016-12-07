@@ -8,4 +8,4 @@ make install
 export PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/lib64/pkgconfig/:/usr/local/lib/pkgconfig/
 ldconfig
 modprobe fuse
-pkg-config --odversion fuse
+pkg-config --modversion fuse
