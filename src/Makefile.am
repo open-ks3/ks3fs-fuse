@@ -35,10 +35,10 @@ if USE_SSL_NSS
   s3fs_SOURCES += nss_auth.cpp
 endif
 
-INCLUDES = -I../third-party/fuse-2.9.7/include -I../third-party/curl-7.50.3/include/ -I../third-party/openssl-1.0.1c/include/
-DEPS_LIBS = -lfuse -lrt -ldl -lz -lcurl -lxml2 -lssl -lcrypto -lstdc++ -lidn -lfuse
+INCLUDES = -I../third-party/fuse-2.9.7/include -I../third-party/curl-7.50.3/include/ -I../third-party/openssl-1.0.1c/include/ -I../third-party/libxml2-2.7.6/include/ -I../third-party/zlib-1.2.11/include/
+DEPS_LIBS = -lfuse -lrt -ldl -lxml2 -lcurl -lssl -lcrypto -lstdc++ -lidn -lz
 s3fs_LDFLAGS = -pthread
-s3fs_LDADD = -L../third-party/fuse-2.9.7/lib -L../third-party/curl-7.50.3/lib/ -L../third-party/gcc-4.8.4/lib -L../third-party/zlib-1.2.11/lib -L../third-party/openssl-1.0.1c/lib $(DEPS_LIBS)
+s3fs_LDADD = -L../third-party/fuse-2.9.7/lib -L../third-party/curl-7.50.3/lib/ -L../third-party/gcc-4.8.4/lib -L../third-party/zlib-1.2.11/lib -L../third-party/openssl-1.0.1c/lib -L../third-party/libxml2-2.7.6/lib $(DEPS_LIBS)
 
 noinst_PROGRAMS = test_string_util
 
