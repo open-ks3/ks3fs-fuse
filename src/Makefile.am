@@ -36,9 +36,9 @@ if USE_SSL_NSS
 endif
 
 INCLUDES = -I../third-party/fuse-2.9.7/include -I ../third-party/curl-7.50.3/include/
-DEPS_LIBS = -lfuse -lrt -ldl -lcurl -lxml2 -lcrypto -lstdc++ -lidn -lssl -lfuse
+DEPS_LIBS = -lfuse -lrt -ldl -lcurl -lxml2 -lcrypto -lstdc++ -lidn -lssl -lfuse -lz
 s3fs_LDFLAGS = -pthread
-s3fs_LDADD = -L../third-party/fuse-2.9.7/lib -L../third-party/curl-7.50.3/lib/ -L../third-party/gcc-4.8.4/lib $(DEPS_LIBS)
+s3fs_LDADD = -L../third-party/fuse-2.9.7/lib -L../third-party/curl-7.50.3/lib/ -L../third-party/gcc-4.8.4/lib -L../third-party/zlib-1.2.7/lib $(DEPS_LIBS)
 
 noinst_PROGRAMS = test_string_util
 
