@@ -1939,6 +1939,13 @@ int S3fsCurl::RequestPerform(void)
             S3FS_PRN_DBG("Body Text: %s", (bodydata ? bodydata->str() : ""));
             return -ENOENT;
 
+          case 408:
+          case 429:
+            S3FS_PRN_WARN("HTTP response code %ld was returned, retry again", LastResponseCode);
+            retrycnt ++;
+            sleep(3);
+            break;
+
           default:
             S3FS_PRN_ERR("HTTP response code = %ld, returning EIO", LastResponseCode);
             S3FS_PRN_DBG("Body Text: %s", (bodydata ? bodydata->str() : ""));
