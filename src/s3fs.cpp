@@ -2700,19 +2700,17 @@ static int ks3fs_write(const char* path, const char* buf, size_t size, off_t off
       return result;
     }
 
-    if (st.st_size > 0) {
-      s3obj_list_t::const_iterator liter;
-      for(liter = part_files.begin(); liter != part_files.end(); ++liter){
-        string part_file = (*liter);
-        s3fs_unlink(part_file.c_str());
-      }
+    s3obj_list_t::const_iterator liter;
+    for(liter = part_files.begin(); liter != part_files.end(); ++liter){
+      string part_file = (*liter);
+      s3fs_unlink(part_file.c_str());
+    }
 
-      if (0 != (result = s3fs_create(real_path.c_str(), st.st_mode, fi))) {
-        return result;
-      }
-      if (0 != (result = s3fs_open(real_path.c_str(), fi))) {
-        return result;
-      }
+    if (0 != (result = s3fs_create(real_path.c_str(), st.st_mode, fi))) {
+      return result;
+    }
+    if (0 != (result = s3fs_open(real_path.c_str(), fi))) {
+      return result;
     }
   } else {
     FdEntity* ent;

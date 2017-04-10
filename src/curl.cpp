@@ -2761,11 +2761,17 @@ int S3fsCurl::PutRequest(const char* tpath, headers_t& meta, int fd)
   curl_easy_setopt(hCurl, CURLOPT_WRITEDATA, (void*)bodydata);
   curl_easy_setopt(hCurl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
   curl_easy_setopt(hCurl, CURLOPT_HTTPHEADER, requestHeaders);
+  FILE* tempfile = tmpfile();
   if(file){
     curl_easy_setopt(hCurl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(st.st_size)); // Content-Length
     curl_easy_setopt(hCurl, CURLOPT_INFILE, file);
   }else{
-    curl_easy_setopt(hCurl, CURLOPT_INFILESIZE, 0);             // Content-Length: 0
+    //curl_easy_setopt(hCurl, CURLOPT_INFILESIZE, 0);             // Content-Length: 0
+    fputs("0", tempfile);
+    fflush(tempfile);
+    fseek(tempfile, 0L, SEEK_SET);
+    curl_easy_setopt(hCurl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(1)); // Content-Length: 0
+    curl_easy_setopt(hCurl, CURLOPT_INFILE, tempfile);
   }
   S3fsCurl::AddUserAgent(hCurl);                                // put User-Agent
 
@@ -2779,6 +2785,7 @@ int S3fsCurl::PutRequest(const char* tpath, headers_t& meta, int fd)
   if(file){
     fclose(file);
   }
+  fclose(tempfile);
 
   return result;
 }
