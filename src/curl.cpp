@@ -2772,6 +2772,7 @@ int S3fsCurl::PutRequest(const char* tpath, headers_t& meta, int fd)
     fseek(tempfile, 0L, SEEK_SET);
     curl_easy_setopt(hCurl, CURLOPT_INFILESIZE_LARGE, static_cast<curl_off_t>(1)); // Content-Length: 0
     curl_easy_setopt(hCurl, CURLOPT_INFILE, tempfile);
+    b_infile = tempfile;
   }
   S3fsCurl::AddUserAgent(hCurl);                                // put User-Agent
 
@@ -2784,6 +2785,8 @@ int S3fsCurl::PutRequest(const char* tpath, headers_t& meta, int fd)
   bodydata = NULL;
   if(file){
     fclose(file);
+  } else {
+    b_infile = NULL;
   }
   fclose(tempfile);
 
